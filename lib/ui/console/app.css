@@ -239,3 +239,14 @@ body.login { display: grid; place-items: center; min-height: 100vh; padding: 20p
 .login-help ol { padding-left: 18px; margin: 6px 0; }
 .login-help li { margin: 4px 0; }
 .login-help code { word-break: break-all; }
+
+/* 群聊 / 主动私聊 / 梗百科 / 记忆页的表单 */
+.field { margin: 10px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.field > label { flex-basis: 100%; margin: 0; }
+.field > .muted, .field > .field-hint { flex-basis: 100%; margin: 0; }
+input.narrow { width: 7.5em; }
+input.mid { width: 16em; }
+input.wide { width: min(100%, 38em); }
+input[type="range"] { width: 220px; vertical-align: middle; accent-color: var(--accent); }
+.badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+a.btn { text-decoration: none; display: inline-block; }

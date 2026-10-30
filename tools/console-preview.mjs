@@ -8,11 +8,58 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { buildWorld, agentFor, QQ_GROUP } from '../test/fixtures/console-world.mjs'
+import { createMemory } from '../lib/memory/index.js'
+import { createGroupSettings } from '../lib/group/settings.js'
+import { GroupEngine } from '../lib/group/engine.js'
+import { resolveConfig } from '../lib/qq/config.js'
+import { createOutreach } from '../lib/outreach/index.js'
+import { createMemeBase } from '../lib/meme/index.js'
+import { MemeArchive } from '../lib/meme/archive.js'
+import { MemeOnline } from '../lib/meme/sync.js'
+import { createOwner } from '../lib/qq/owner.js'
+import { createSignals } from '../lib/core/signals.js'
+import { createQqStatus } from '../lib/index.js'
 
 delete process.env.DSH_SHALL_CONSOLE
 const port = Number(process.argv[2]) || 6799
 const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pa-console-preview-'))
-const world = await buildWorld({ home, consolePort: port })
+// QQ 侧的合成服务：群聊、主动私聊、梗百科、记忆页都要有东西可看（全是假数据，不连任何服务）
+const shall = path.join(home, 'shall')
+const memory = createMemory({ dir: path.join(shall, 'memory') })
+const owner = createOwner({ dir: shall })
+{
+  const { code } = owner.issueCode()
+  owner.tryPair('10042', code)
+}
+const groupSettings = createGroupSettings({ dir: shall })
+const qqConfig = resolveConfig({ scope: { groups: [String(QQ_GROUP), '30004'], friends: [] } })
+const engine = new GroupEngine({ config: qqConfig.group, settings: groupSettings, memory, botName: () => '小鲸' })
+const signals = createSignals()
+const qqStatus = createQqStatus()
+const judge = Object.assign(async () => ({}), { status: () => ({ using: 'fallback', provider: 'host', model: 'default', note: '配置的模型 deepseek-official/deepseek-flash 不可用，改用宿主默认模型 host/default', lastError: '' }) })
+qqStatus.provide('group', { engine, settings: groupSettings, judge, corpus: { purgeMember: () => 0 }, qqConfig })
+groupSettings.noteSeen('30077', '摄影交流群')
+groupSettings.noteSeen('30077')
+groupSettings.setSettings(String(QQ_GROUP), { mode: 'present' })
+for (const [i, text] of ['今天天气不错', '有人去爬山吗', '我也想去'].entries()) {
+  engine.onInbound({ chatKey: `group:${QQ_GROUP}`, messageId: String(100 + i), senderId: '10001', senderName: '小明', at: Date.now(), text, addressed: i === 0 ? 'at' : '', mentionsOthers: false, isCommand: false, fromBot: false })
+}
+for (const result of ['engaged', 'engaged', 'rejected', 'silence']) groupSettings.recordInterject(String(QQ_GROUP), result)
+memory.observe({ scope: 'owner', kind: 'trait', text: '喜欢简短直接的回答，不要客套', actor: 'console', origin: 'user', confidence: 1 })
+memory.observe({ scope: 'owner:work', kind: 'works', text: '改配置前先备份原文件', actor: 'profile', origin: 'model', confidence: 0.8, importanceDelta: 2 })
+memory.observe({ scope: 'owner:chat', kind: 'intent', text: '待续：问问周末爬山的集合时间', actor: 'qq:memo', origin: 'model', confidence: 0.5, validUntil: Date.now() + 2 * 86400000 })
+memory.observe({ scope: `chat:group:${QQ_GROUP}`, kind: 'note', text: '登山爱好者的群，周末常约线路', actor: 'qq:coldstart', origin: 'model', status: 'candidate', confidence: 0.6, source: { sessionId: 's', at: Date.now(), quote: '周末有人去香山吗' } })
+memory.observe({ scope: `member:${QQ_GROUP}:10001`, kind: 'preference', text: '喜欢摄影，常聊器材', actor: 'qq:members', origin: 'model', confidence: 0.7 })
+const outreach = createOutreach({ dir: shall, config: {}, memory, owner, rand: () => 0.5, isConnected: () => true, isBusy: async () => ({ busy: false }), deliver: async () => {} })
+qqStatus.provide('outreach', outreach)
+const meme = createMemeBase({
+  dbPath: path.join(shall, 'meme', 'memes.db'), memory, settingsFile: path.join(shall, 'meme', 'settings.json'),
+  online: new MemeOnline({ dbPath: path.join(shall, 'meme', 'memes.db'), fetchImpl: async () => ({ status: 500, ok: false, headers: { get: () => null } }) }),
+  archive: new MemeArchive({ file: path.join(shall, 'meme', 'search_archive.json') }),
+})
+signals.emit({ kind: 'correction', scope: 'chat:private:42', chatKey: 'private:42', quote: '不对，我说的是周三' })
+
+const world = await buildWorld({ home, consolePort: port, shared: { memory, meme, owner, qqStatus, signals, groupSettings } })
 const { service, headers } = world
 await world.waitFor(() => service.getState().lastSignals != null)
 

@@ -191,7 +191,7 @@ export function agentFor(header) {
  * 起一个完整的环境。返回假服务登记下来的东西，供测试检查。
  * @param {{home:string, consolePort?:number, timer?:'manual'|'real'}} options
  */
-export async function buildWorld({ home, consolePort = 0, timer = 'manual', autoMine = false }) {
+export async function buildWorld({ home, consolePort = 0, timer = 'manual', autoMine = false, shared = {} }) {
   process.env.DSH_HOME = home
   const { groupCwd } = writeWorldFiles(home)
   const root = new Context()
@@ -239,7 +239,7 @@ export async function buildWorld({ home, consolePort = 0, timer = 'manual', auto
     scan: { scanOnStart: true, intervalMs: 120000 },
     console: { enabled: true, port: consolePort },
     skills: { autoMine },
-  })
+  }, shared)
   const service = root.get('shallAdapt')
   const waitFor = async (predicate, timeoutMs = 15000) => {
     const started = Date.now()
