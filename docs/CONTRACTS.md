@@ -247,6 +247,13 @@ qq.pairing.issueCode() / qq.pairing.owner() / qq.pairing.reset()
 
 QQ 工具在 `execute(args, exec)` 里用 `exec.agent.session.header` 判调用方：QQ 会话只能作用于自己所在的聊天，你自己的会话可作用于 scope 内任何聊天，拿不到 header 一律拒绝。这一层与 privacy 的工具等级叠加，不互相替代。
 
+点名（UX 第 23 条，`lib/qq/pipeline.js`）：群里默认档位 `mention`，下面几种都算叫 bot，结果写在 `decision.addressedBy`：
+`at`（@ bot）、`reply`（回复 bot 发过的消息：先查最近 500 条 bot 发出的 message_id，查不到时取回引用原文看发送者）、
+`name`（消息里出现 `participation.aliases` 里的名字；写成“群号:名字”的只在那个群生效）、`poke`（戳一戳 bot，同一会话 60 秒内只响应一次，`participation.poke=false` 关闭）。
+
+引用（UX 第 25 条，`lib/qq/onebot/quote.js`）：消息带 reply 段时用 `get_msg` 取回原文（3 秒超时），
+在正文前接一行 `[引用 发送者: 原文]`（原文压成一行、最多 200 字）；引用的是 bot 自己说的话时发送者后面标“(你)”；取不到原文时如实写“原文取不到”。
+
 ## 7. 进程内信号总线 `core.signals`
 
 ```js
