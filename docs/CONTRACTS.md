@@ -207,6 +207,10 @@ C → owner:work/works，D → owner/uncertain 候选，工作笔记 → owner:w
 - `owner`、`owner:work`、`persona:*` 进系统提示段（`shall:profile`、`shall:persona`，`interpolate:false`），会话中途基本不变。
 - `owner:chat`、`chat:*`、`member:*` 进上下文快照 `shall:qq-memory`（`systemPrompt.context`，order 130）。空闲整理会在会话中途改它们，用快照才不会让系统提示中途变化、作废前缀缓存。
 - 段与快照的文本按 `select()` 返回的 `key` 缓存，命中时返回同一个字符串。
+- 空闲整理（`lib/conversation/idle.js`，actor `qq:idle`）：常驻会话停下来 `conversation.idleMinutes`（默认 20，0 关闭）分钟、
+  且上次整理之后新增至少 `idleMinTurns`（默认 3）条用户发言时，只把新对话提取成碎片写进本聊天的范围；不换会话、不发消息、
+  不按代数衰减。会话忙或正在交班时跳过；全插件同一时间只跑一个。水位线记在绑定记录的 `lastExtract = { sessionId, seq, at }`，
+  交班在提示词里用分隔行标出水位线，线以上已经整理过。
 - 画像段的选取规则（`INJECT_POLICY`）：总预算 `inject.budgetTokens`（默认 1500），trait 保底 30%，avoid + works 合计不超过 50%，
   uncertain 和 note 不注入，置顶豁免预算，两个新生试用位。只有真进了系统提示才记 `injected`（设置页预览不记）。
 

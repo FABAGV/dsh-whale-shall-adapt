@@ -57,7 +57,9 @@ console.log('B. 处置按钮')
 {
   const m = fresh('b')
   applyGeneration(m, [], [e('A', '喜欢用表格对比几个方案'), e('A', '回复里不要用表情符号'), e('B', '不要在回答末尾追加总结段落')])
-  const [x, y, z] = profileEntries(m)
+  // 同一毫秒写入的条目在定序键上打平，顺序取决于 id：按正文取，别按位置取
+  const byClaim = (claim) => profileEntries(m).find((r) => r.claim === claim)
+  const [x, y, z] = ['喜欢用表格对比几个方案', '回复里不要用表情符号', '不要在回答末尾追加总结段落'].map(byClaim)
   check('置顶', markEntry(m, { status: 'pinned', id: x.id }).ok && profileEntries(m).find((r) => r.id === x.id).pinned)
   check('置顶上限', markEntry(m, { status: 'pinned', id: y.id }, { maxPinned: 1 }).ok === false)
   const sealed = markEntry(m, { status: 'sealed', claim: y.claim })
