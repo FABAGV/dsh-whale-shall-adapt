@@ -10,7 +10,7 @@
 | 包名 / 插件 id | `dsh-whale-shall-adapt` |
 | 状态目录 | `$DSH_HOME/shall/`，下分 `adapt/`、`qq/`、`memory/` |
 | 宿主 HTTP 前缀 | `/shall/api/`（设置页与控制台共用一张路由表，见第 7 节） |
-| QQ 状态页 | `/shall/qq/status`（暂时还挂在 OneBot 端口上，阶段 1 移进控制台） |
+| QQ 体检 | 控制台的 QQ 页（`GET /api/qq/health`，登录后）；OneBot 端口上只有不带身份信息的 `/shall/qq/health` |
 | 桌面端凭据头 / 页面注入全局 | `x-shall-token` / `__DSH_SHALL__` |
 | 工具 | `shall_qq_send`、`shall_qq_history`、`shall_qq_chats`、`shall_qq_alive`、`shall_qq_memory`（阶段 1 换成 `shall_memory`）、`shall_memory_recall`（阶段 1 新增） |
 | 系统提示段 | `shall:frontdesk`(10)、`shall:profile`(30)、`shall:persona`(31)；上下文快照 `shall:qq-memory`(130) |
@@ -241,9 +241,12 @@ privacy.scopesVisibleTo(header)   // 按 4.3 节返回记忆范围列表
 bindings.chatOf(sessionId) / bindings.resolve(header, lookupHeader) / bindings.list() / bindings.onChange(fn)
 corpus.listChats() / corpus.readRecords({ chatType, chatId, days, maxRecords }) / corpus.listMembers(records)
 corpus.memberSamples(records, memberId, limits) / corpus.purgeMember(chatType, chatId, memberId)
-qq.status.snapshot()      // 完整体检快照，控制台登录后可见
+qqStatus.register(fn) / qqStatus.snapshot()   // 入口建的登记处（lib/index.js 的 createQqStatus）：QQ 侧登记完整快照，控制台 GET /api/qq/health 读它
 qq.pairing.issueCode() / qq.pairing.owner() / qq.pairing.reset()
 ```
+
+体检（`lib/ui/qq-health.js`）：控制台的 QQ 页显示结论、每条问题的下一步、存活判据、关键状态、交班进度、配置摘要和主人配对；只在登录后可见。
+OneBot 端口上不用登录的只有 `/shall/qq/health`，返回 `{ ok, alive, connections, version, detail }`，不带 chatId、群名、bot 账号、路径和配置。
 
 QQ 工具在 `execute(args, exec)` 里用 `exec.agent.session.header` 判调用方：QQ 会话只能作用于自己所在的聊天，你自己的会话可作用于 scope 内任何聊天，拿不到 header 一律拒绝。这一层与 privacy 的工具等级叠加，不互相替代。
 

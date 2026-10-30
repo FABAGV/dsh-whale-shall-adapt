@@ -1199,6 +1199,8 @@ const mod = await import('../lib/qq/plugin.js')
 log.info(`已载入插件：name=${mod.default?.name ?? mod.name}`)
 log.info(`状态目录（本次运行专用）：${STATE_DIR}`)
 
+const { createQqStatus } = await import('../lib/index.js')
+const qqStatus = createQqStatus()
 mod.default.apply(root, {
   logLevel: 'debug',
   connection: { mount: 'own', host: '127.0.0.1', reversePort: PORT, token: '' },
@@ -1206,7 +1208,7 @@ mod.default.apply(root, {
   participation: { groupMode: 'mention' },
   scope: { groups: ['*'], friends: ['*'], blockedGroups: ['99999'] },
   advanced: { stateDir: STATE_DIR },
-})
+}, { qqStatus })
 
 await sleep(1000)
 
@@ -1624,27 +1626,26 @@ try {
 }
 runChecks('语料库断言', corpusChecks)
 
-// ── 状态端点的两种呈现 ────────────────────────────────────────────────
-// 同一份快照：curl/脚本默认拿 JSON（行为不能变），浏览器地址栏打开拿体检页。
-// 这几条同时验证 `?format=` 查询串不会把路由打成 404。
+// ── OneBot 端口上的健康检查 ────────────────────────────────────────────
+// 不用登录谁都能访问，所以只能回答“在不在、通不通”；完整体检在控制台。
 {
-  const endpoint = `http://127.0.0.1:${PORT}/shall/qq/status`
-  const jsonRes = await fetch(endpoint)
-  const jsonType = String(jsonRes.headers.get('content-type') ?? '')
-  const jsonText = await jsonRes.text()
-  const htmlRes = await fetch(endpoint, { headers: { accept: 'text/html' } })
-  const htmlType = String(htmlRes.headers.get('content-type') ?? '')
-  const htmlText = await htmlRes.text()
-  const forced = await fetch(`${endpoint}?format=json`, { headers: { accept: 'text/html' } })
-  const forcedType = String(forced.headers.get('content-type') ?? '')
-
+  const res = await fetch(`http://127.0.0.1:${PORT}/shall/qq/health?x=1`)
+  const text = await res.text()
+  let body = null
+  try {
+    body = JSON.parse(text)
+  } catch {
+    body = null
+  }
+  const old = await fetch(`http://127.0.0.1:${PORT}/shall/qq/status`)
+  const htmlAsk = await fetch(`http://127.0.0.1:${PORT}/shall/qq/health`, { headers: { accept: 'text/html' } })
   runChecks('状态端点呈现', [
-    ['默认（Accept: */*）仍是 JSON', jsonType.includes('application/json') && jsonText.trimStart().startsWith('{')],
-    ['浏览器 Accept: text/html 拿到体检页', htmlType.includes('text/html') && htmlText.includes('shall QQ 体检')],
-    ['体检页带 x-content-type-options: nosniff', htmlRes.headers.get('x-content-type-options') === 'nosniff'],
-    ['?format=json 能覆盖 Accept', forced.status === 200 && forcedType.includes('application/json')],
-    ['查询串不影响路由（带 ?format= 不 404）', forced.status === 200],
-    ['体检页给出结论（正常 / 需处理 二者其一）', htmlText.includes('一切正常') || htmlText.includes('需要处理')],
+    ['/shall/qq/health 是 JSON，带查询串也不 404', res.status === 200 && String(res.headers.get('content-type')).includes('application/json') && body !== null],
+    ['只有 ok / alive / connections / version / detail 几项', body !== null && Object.keys(body).sort().join() === 'alive,connections,detail,ok,version'],
+    ['不含 chatId、群名、bot 账号、路径', !/selfId|chatId|workspaceRoot|logFile|ControlBot|\\\\|[A-Z]:\//.test(text)],
+    ['浏览器访问也只给 JSON（没有整页 HTML 了）', String(htmlAsk.headers.get('content-type')).includes('application/json')],
+    ['旧的 /shall/qq/status 已经没有了', old.status === 404],
+    ['完整快照仍然登记给控制台', Boolean(qqStatus.snapshot()?.health)],
   ])
 }
 
@@ -1656,9 +1657,9 @@ const sessionsIn = (dir) => [...liveSessions.values()].filter((s) => s.cwd === d
 const promptsFor = (sessionId) => calls.prompts.filter((p) => p.sessionId === sessionId)
 const okArchivesFor = (sessionId) => calls.archives.filter((a) => a.sessionId === sessionId && a.ok)
 
+/** 完整快照：插件登记给控制台的那一份（OneBot 端口上只剩最小健康检查） */
 async function fetchStatus() {
-  const res = await fetch(`http://127.0.0.1:${PORT}/shall/qq/status`)
-  return await res.json()
+  return qqStatus.snapshot()
 }
 
 /** 任务台账已删：状态文件里不该再有任何任务记录（tasks 字段、会话上的 taskIds） */
@@ -3039,7 +3040,8 @@ const offlineChecks = []
     //    只等 ① 会在"连接刚摘掉、判定还没翻"的缝里取到一次中间态；
     //    只等 ② 又可能在别的连接还在时误判成"已经断开"。
     //    等待失败时**不跳过**：后面照原样断言，让失败看得见（而不是变成一条假绿）。
-    const offlineSeen = await waitFor(async () => {
+    // 谓词是异步的，必须用 waitValue：waitFor 同步调用，拿到的 Promise 恒为真，会立刻返回
+    const offlineSeen = await waitValue(async () => {
       try {
         const s = await fetchStatus()
         return (s?.connection?.active ?? -1) === 0 && s?.alive?.alive === false
