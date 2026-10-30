@@ -1528,7 +1528,7 @@ const toolChecks = [
   ['shall_qq_send 已注册', Boolean(sendTool)],
   ['shall_qq_chats 已注册', Boolean(listTool)],
   ['shall_qq_history 已注册', Boolean(histTool)],
-  ['shall_qq_tasks 已注册（任务台账，跨会话可查）', Boolean(tasksTool)],
+  ['不再注册 shall_qq_tasks（没有任务台账，存活判定只在 shall_qq_alive）', !tasksTool],
   ['已注册门控', guards.length > 0],
 ]
 
@@ -1553,22 +1553,6 @@ if (histTool) {
   const out = await histTool.execute({}, OWNER_EXEC)
   toolChecks.push(['shall_qq_history 能查到语料', (out?.count ?? 0) > 0])
   toolChecks.push(['shall_qq_history 输出可渲染', Array.isArray(histTool.output?.render({}, out))])
-}
-if (tasksTool) {
-  const out = await tasksTool.execute({}, OWNER_EXEC)
-  // ⚠️ `conversation.enabled=true` 下 mock 阶段的任务消息先进常驻会话，
-  //    不会产生任何任务记录（派活得靠模型调 shall_qq_dispatch，而假 DSH 里没有模型）。
-  //    所以这里分两种判据：v2 下必须有**非空**记录；v3 下必须是**空但调用成功**。
-  //    两种判据都比"调用抛错"强 —— 后者才是真正要拦的回归。
-  toolChecks.push([
-    CONV ? 'shall_qq_tasks 可调用且台账为空（v3：mock 阶段没有派活）' : 'shall_qq_tasks 能列出任务台账',
-    CONV ? Array.isArray(out?.tasks) && out.tasks.length === 0 && out.count === 0 : (out?.tasks ?? []).length >= 1,
-  ])
-  toolChecks.push(['shall_qq_tasks 输出可渲染', Array.isArray(tasksTool.output?.render({}, out))])
-  toolChecks.push([
-    'shall_qq_tasks 列出的任务带状态与 sessionId',
-    (out?.tasks ?? []).every((t) => Boolean(t.status) && typeof t.no === 'number'),
-  ])
 }
 if (guards.length > 0) {
   const denied = guards[0]({ name: 'shall_qq_send', arguments: { chat_type: 'group', chat_id: '99999', text: 'x' } })
@@ -2060,8 +2044,8 @@ if (CONV) {
       deskRootText.includes('直接动手') && deskRootText.includes('不许'),
     ])
     v3Checks.push([
-      '前台-g 约定里写了进度询问的查证顺序（shall_qq_alive → shall_qq_tasks → 如实回答）',
-      deskRootText.includes('shall_qq_alive') && deskRootText.includes('shall_qq_tasks') && deskRootText.includes('不要编'),
+      '前台-g 约定里写了进度询问的查证顺序（shall_qq_alive → 如实回答），不再提任务台账工具',
+      deskRootText.includes('shall_qq_alive') && !deskRootText.includes('shall_qq_tasks') && deskRootText.includes('不要编'),
     ])
     v3Checks.push([
       '前台-h 约定里点名"停一下看看日志"不是要停活（关键词误判的反面例子仍在）',
@@ -2090,18 +2074,6 @@ if (CONV) {
         String(out?.because ?? '').includes('事件循环') && String(out?.because ?? '').includes('通道'),
       ])
       v3Checks.push(['存活-e 工具输出可渲染', Array.isArray(aliveTool.output?.render({}, out))])
-    }
-    {
-      const tk = await tasksTool.execute({}, OWNER_EXEC)
-      v3Checks.push([
-        '存活-f shall_qq_tasks 的输出里也带存活判定（问进度时第一眼就能看到"它还在不在"）',
-        tk?.alive?.alive === true && String(tk?.alive?.because ?? '').length > 0,
-      ])
-      v3Checks.push([
-        '存活-g shall_qq_tasks 的 alive.tasks 给出任务侧独立结论（在跑的会话还在不在）',
-        String(tk?.alive?.tasks ?? '').startsWith('任务侧：'),
-      ])
-      v3Checks.push(['存活-h shall_qq_tasks 渲染里带上了存活那一行', String(tasksTool.output?.render({}, tk)?.[0]?.text ?? '').includes('插件')])
     }
     v3Checks.push([
       '存活-i 状态端点暴露了 alive 判定与依据（alive.alive/alive.because/alive.evidence）',
@@ -3013,9 +2985,9 @@ const lineageChecks = []
     ])
     lineageChecks.push([
       CONV
-        ? '问进度-b shall_qq_tasks 正常运行：默认路径报“没有独立任务台账”'
+        ? '问进度-b 不再注册 shall_qq_tasks，也没有任务台账'
         : '问进度-b shall_qq_tasks 正常运行：v2 回滚路径下台账里真有任务（台账本身没被拆）',
-      Boolean(registeredTools.get('shall_qq_tasks')) &&
+      !registeredTools.get('shall_qq_tasks') &&
         (CONV
           ? (await listTasksOf('private', QC, 50)).length === 0
           : (await listTasksOf('private', qcChatId, 50)).length > 0),
@@ -3147,8 +3119,6 @@ const offlineChecks = []
       ])
       offlineChecks.push(['N14-h 离线时的渲染明确写「不活着」', String(aliveTool2.output?.render({}, out)?.[0]?.text ?? '').includes('不活着')])
     }
-    const tk2 = await tasksTool.execute({}, OWNER_EXEC)
-    offlineChecks.push(['N14-i shall_qq_tasks 也带上了离线判定（问进度时先被拦住）', tk2?.alive?.alive === false])
   } catch (err) {
     offlineChecks.push([`N14 断开实测抛错: ${err.stack ?? err.message}`, false])
   }
