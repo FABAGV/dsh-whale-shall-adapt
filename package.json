@@ -1,6 +1,6 @@
 {
   "name": "dsh-whale-shall-adapt",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "DeepSeek Harness 插件：画像 / 人格 / 技能 / 权限 / 控制台 + QQ 通道 / 常驻对接会话 / 交班，统一记忆层。",
   "type": "module",
   "main": "lib/index.js",
@@ -16,7 +16,7 @@
   "files": [
     "lib",
     "tools/mock-napcat.mjs",
-    "tools/standalone-harness.mjs",
+    "docs/CONTRACTS.md",
     "cordis.patch.yml",
     "README.md",
     "CHANGELOG.md",

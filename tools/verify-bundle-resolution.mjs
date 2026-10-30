@@ -1,4 +1,4 @@
-// 验证 dsh-whale-inurqq 作为 DSH bundle 能否被正确解析与加载。
+// 验证 dsh-whale-shall-adapt 作为 DSH bundle 能否被正确解析与加载。
 // 关键点：从 profile 的 node_modules 解析（而不是插件自己的 node_modules）。
 //
 // 用法：

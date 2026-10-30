@@ -1,10 +1,10 @@
 /**
  * Mock NapCat —— 模拟 OneBot 11 反向 WebSocket 客户端。
  *
- * 用途：在**没有登录真实 QQ 号**的情况下验证 dsh-whale-inurqq 插件的连接层、归一化层与路由决策。
+ * 用途：在**没有登录真实 QQ 号**的情况下验证 dsh-whale-shall-adapt 插件的连接层、归一化层与路由决策。
  * 它做的事和 NapCat 完全一样：连上插件的 WS 端口、带上 OneBot 握手头、推送事件、响应动作调用。
  *
- * 脚本覆盖（v2）：
+ * 脚本覆盖：
  *   - 私聊任务 / 群聊未 @ / 群聊 @bot / 合并转发
  *   - notice 与重复事件
  *   - **闲聊 vs 任务分流**（「在吗？」「谢谢」应进常驻会话）
@@ -76,7 +76,7 @@ const SCRIPT = [
   },
   {
     id: 'private-task-1',
-    label: '私聊任务 → 期望 TASK（新建独立任务会话）',
+    label: '私聊任务 → 期望 TASK（分诊为任务，仍进常驻会话）',
     event: messageEvent({
       chatType: 'private', chatId: '20002', senderId: '20002', senderName: '测试用户',
       segments: [{ type: 'text', data: { text: '帮我在工作区建个项目，写个 README' } }],
@@ -122,10 +122,10 @@ const SCRIPT = [
     label: '重复推送上一条私聊任务 → 期望 IGNORE(duplicate)',
     dupOf: 'private-task-1',
   },
-  // ── v2：任务/闲聊分流 ────────────────────────────────────────────────
+  // ── 任务/闲聊分流 ────────────────────────────────────────────────
   {
     id: 'private-chat',
-    label: '私聊闲聊「在吗？」→ 期望 CHAT（进常驻会话，不新建任务会话）',
+    label: '私聊闲聊「在吗？」→ 期望 CHAT（进常驻会话）',
     event: messageEvent({
       chatType: 'private', chatId: '20002', senderId: '20002', senderName: '测试用户',
       segments: [{ type: 'text', data: { text: '在吗？' } }],
@@ -142,7 +142,7 @@ const SCRIPT = [
       ],
     }),
   },
-  // ── v2：并发任务（彼此间隔很小，用来观察是否真的并行）──────────────────
+  // ── 并发任务（彼此间隔很小，用来观察是否真的并行）──────────────────
   {
     id: 'parallel-a',
     label: '私聊任务 A → 期望 TASK（与下一条并行，各自独立会话）',

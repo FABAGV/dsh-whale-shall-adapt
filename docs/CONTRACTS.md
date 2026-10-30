@@ -1,7 +1,7 @@
 # 模块契约
 
 本文件定下模块之间的接口和不变式。代码与本文冲突时，先改本文再改代码。
-设计背景见仓库外的 `R:\working zone\whale\PLAN-dsh-whale-shall-adapt.md`、`UX-群聊体验调研.md`、`progress\S2.md`、`progress\S3.md`。
+设计背景见仓库外的 `R:\working zone\whale\PLAN-dsh-whale-shall-adapt.md`、`UX-群聊体验调研.md`、`UX-SurfCore目的机制调研.md`。
 
 ## 1. 名字（已落地，提交 254d097）
 
@@ -9,10 +9,10 @@
 |---|---|
 | 包名 / 插件 id | `dsh-whale-shall-adapt` |
 | 状态目录 | `$DSH_HOME/shall/`，下分 `adapt/`、`qq/`、`memory/` |
-| 宿主 HTTP 前缀 | `/shall/api/`（设置页与控制台共用一张路由表，见第 7 节） |
+| 宿主 HTTP 前缀 | `/shall/api/`（设置页；控制台的接口见第 9 节） |
 | QQ 体检 | 控制台的 QQ 页（`GET /api/qq/health`，登录后）；OneBot 端口上只有不带身份信息的 `/shall/qq/health` |
 | 桌面端凭据头 / 页面注入全局 | `x-shall-token` / `__DSH_SHALL__` |
-| 工具 | `shall_qq_send`、`shall_qq_history`、`shall_qq_chats`、`shall_qq_alive`、`shall_qq_memory`（阶段 1 换成 `shall_memory`）、`shall_memory_recall`（阶段 1 新增） |
+| 工具 | `shall_qq_send`、`shall_qq_history`、`shall_qq_summary`、`shall_qq_chats`、`shall_qq_alive`、`shall_qq_memory`、`shall_memory_recall`、`shall_meme_lookup` |
 | 系统提示段 | `shall:frontdesk`(10)、`shall:profile`(30)、`shall:persona`(31)；上下文快照 `shall:qq-memory`(130) |
 | 技能来源 / 技能名前缀 | `shall` / `shall-` |
 | 凭据名 | `SHALL_ONEBOT_TOKEN` |
@@ -26,47 +26,59 @@
 ```
 $DSH_HOME/shall/
 ├─ owner.json                主人身份绑定（4.8）：配对的 QQ 号
+├─ groups.json               群的运行时设置（第 8 节）：控制台里接入了哪些群、各群的档位和参数、见过但没接入的群（只记条数）、插话结果统计、后台任务进度
+├─ outreach.json             主动私聊主人（8.1）：控制台的开关和调参、下次发送时间、今天的次数、最近联系记录
+├─ meme/                     梗百科（第 11 节）：memes.db（导入或同步来的词库）、search_archive.json（检索存档）、settings.json（联网开关）
 ├─ memory/memory.json        统一记忆（第 4 节）；写前备份为 memory.json.bak
 ├─ adapt/                    画像侧：state.json、cursor.json、plain/、profile-history/、privacy.json、audit.jsonl、
 │                            personas.json、skills.json、console-key、plugin.log
-└─ qq/                       QQ 侧：state.json（阶段 1 换成 bindings.json）、owner.json（配对）、handoff/、corpus/<type>-<号>/<日期>.jsonl、plugin.log
+└─ qq/                       QQ 侧：state.json、bindings.json（会话绑定表）、handoff/、corpus/<type>-<号>/<日期>.jsonl、plugin.log
 ```
 
-所有写文件都走 `lib/core` 的原子写（写临时文件再 rename）。`test/selftest.mjs` 第 13 节的写文件白名单照旧生效，新增写目标必须先加进白名单并写明理由。
+所有写文件都走原子写（写临时文件再 rename）。`test/selftest.mjs` 里的写文件白名单照旧生效，新增写目标必须先加进白名单并写明理由。
 
 ## 3. 配置
 
-现状（过渡态）：画像侧的键在顶层，QQ 侧整棵放在 `qq` 子树，`logLevel` 共用。`lib/index.js` 的 `splitConfig()` 负责切开。
-
-目标形状（阶段 1 逐步迁过去，迁一块删一块旧键，不留兼容）：
+一份 schema（`lib/index.js` 的 `Config`），设置页和 cordis 配置共用。`splitConfig()` 把它切给两边：
 
 ```yaml
-logLevel: info
+logLevel: info                      # 两边共用
+# ── 画像 / 人格 / 技能 / 权限 / 控制台（顶层，字段与默认值沿用原画像侧，见 lib/adapt/schema.legacy.js）
+stateDir / sessionsRoot / signals / profile / scan / inject / privacy / console / persona / skills
+# ── QQ 通道与常驻对接会话
 qq:
-  connection: { host, port: 6700, path, tokenRef: SHALL_ONEBOT_TOKEN, token, callTimeoutMs, mount }
-  scope: { groups: [], friends: [], blockedGroups: [], blockedFriends: [] }
-  participation: { privateMode: always }      # 群聊档位移到 group.*
-  workspaceRoot: ''
-  prefix: { task: '', chat: '' }
-  ingest: { forwardRecords, groupArchive }
-  corpus: { retainDays: 30 }
-  dedupe: { windowMs, maxEntries }
-  relayFlushMs: 2000
-  conversation: { handoffAtRatio, minTokensBetweenHandoffs, handoffRetainDays, handoffInputChars, handoffMaxTokens,
-                  idle: { enabled, minutes: 20, minTurns: 3 }, coldStart: { enabled, minMessages: 200, days: 30 } }
-memory:
-  injectBudgetTokens: { owner: 1500, chat: 2000 }
-  similarity: { merge: 0.82, ask: 0.3, seal: 0.6 }
-  aging: { everyGens: 10, staleGens: 5, dropGens: 10, maxPerScope: 500 }
-  members: { enabled: true, maxPerRun: 20, everyHours: 6, disabledGroups: [] }
+  connection:   { mount, host, reversePort: 6700, reversePath, tokenRef: SHALL_ONEBOT_TOKEN, token, callTimeoutMs }
+  scope:        { groups: [], friends: [], blockedGroups: [], blockedFriends: [] }   # 默认一个群都不接；'*' = 全部；私聊 = friends ∪ 配对的主人
+  participation: { privateMode, aliases: [], poke: true, mergeMs: 1200, knownBots: [], images: true, maxImages: 3, maxImageBytes: 4194304 }
+  tasks:        { workspaceRoot, prefix, chatPrefix }
+  conversation: { handoffAtRatio, minTokensBetweenHandoffs, memoryBudgetTokens, injectMode, handoffRetainDays, handoffInputChars,
+                  handoffMaxTokens, fragmentMergeJaccard, fragmentAskJaccard, agingEveryGens, maxFragmentsPerChat, idleMinutes: 20, idleMinTurns: 3 }
+  ingest:       { forwardRecords, groupArchive }
+  corpus:       { retainDays: 30 }
+  advanced:     { dedupeWindowMs, dedupeMaxEntries, relayFlushMs, stateDir }
+# ── 群聊回复决策（第 8 节）
 group:
-  defaultMode: mention        # silent | mention | present | active
-  judge: { provider: deepseek-official, model: deepseek-flash, timeoutMs: 15000 }
-  templates: {}               # 按群覆盖
-profile / persona / skills / scan / signals / privacy / console:  沿用旧画像侧的字段与默认值
+  defaultMode: mention              # silent | mention | present | active
+  judge:       { provider: deepseek-official, model: deepseek-flash, timeoutMs: 15000 }
+  eagerness: 0.5
+  present:     { minutes: 8, messages: 12 }
+  timing:      { quietMs: 4000, maxWaitMs: 20000 }
+  energy:      { initial: 100, floor: -100, recoverPerSec: 0.6, base: 14, perChar: 0.12, minToSpeak: 20 }
+  budget:      { perHour: 8, cooldownMs: 45000, perSenderCalls: 6, perSenderWindowMs: 60000 }
+  quietHours:  { start: '', end: '' }
+  context:     { messages: 20, chars: 1500, maxAgeMs: 1800000 }
+  reply:       { quote: true, maxChars: 400, typingMsPerChar: 40, typingMaxMs: 2500 }
+  members:     { enabled: true, maxPerRun: 20, everyHours: 6, minMessages: 5, days: 14 }
+  coldStart:   { enabled: true, minMessages: 200, days: 30 }
+  templates: {}                     # 按群覆盖：{ '123456': { mode: active, eagerness: 0.7 } }
+# ── 主动私聊主人（8.1）
+outreach: { enabled: false, quietHours: { start: '23:30', end: '08:30' }, maxPerDay: 4, minGapMs: 9000000, maxGapMs: 18000000, ownerQuietMs: 1800000 }
 ```
 
-**用户已定**：群聊准入默认不接。`qq.scope.groups` 为空 = 一个群都不接（不再是“全部群”）；私聊准入 = `qq.scope.friends` ∪ 配对的主人，两者都空时拒绝所有私聊。
+画像侧的键没有再嵌一层命名空间：它们本来就是顶层的，搬来搬去只会让旧配置全部失效，没有收益。
+不识别的值一律回退默认并给出警告（`resolveConfig` / `resolveGroupConfig` / `resolveOutreachConfig`），不抛错。
+**用户已定**：群聊准入默认不接。`qq.scope.groups` 为空 = 一个群都不接，控制台“群聊”页逐个接入（写进 `groups.json`）；
+私聊准入 = `qq.scope.friends` ∪ 配对的主人，两者都空时拒绝所有私聊。
 
 ## 4. 统一记忆层 `lib/memory/`
 
@@ -127,6 +139,7 @@ memory.select(scopes, budgetTokens, policy?)   // → { picked, usedTokens, tota
 memory.render(selection, { title, intro })     // 同样输入逐字节相同；空选择返回 ''
 memory.retract(ids, { actor, reason })   // 生成器不再支持：active → candidate，candidate → historical；置顶、用户来源、挂着冲突的不动
 memory.demote(ids, { actor, reason })    // 重要度 −1
+memory.complete(ids, { actor, reason })  // 办完了（备忘“完成”、主动联系被拒绝）：active → historical，留在账里；置顶的和用户来源的不动
 memory.recordUsage(ids, event, meta?)    // injected（按 meta.key 去重）| recalled | corrected | seen
 memory.recall(query, scopes, limit?)     // active、candidate、historical 都能召回，historical 带 historical: true
 memory.age(scope, { gen, now?, everyGens?, maxPerScope? })   // 过期、衰减、清理、单范围上限；返回 { decayed, expired, dropped }
@@ -239,63 +252,114 @@ privacy.scopesVisibleTo(header)   // 按 4.3 节返回记忆范围列表
 
 ```js
 bindings.chatOf(sessionId) / bindings.resolve(header, lookupHeader) / bindings.list() / bindings.onChange(fn)
-corpus.listChats() / corpus.readRecords({ chatType, chatId, days, maxRecords }) / corpus.listMembers(records)
-corpus.memberSamples(records, memberId, limits) / corpus.purgeMember(chatType, chatId, memberId)
-qqStatus.register(fn) / qqStatus.snapshot()   // 入口建的登记处（lib/index.js 的 createQqStatus）：QQ 侧登记完整快照，控制台 GET /api/qq/health 读它
+corpus.search({ chatType, chatId, query, since, limit }) / corpus.purgeMember(chatType, chatId, memberId) / corpus.purge(chatType, chatId)
+qqStatus.register(fn) / qqStatus.snapshot()            // 体检快照（lib/index.js 的 createQqStatus），控制台 GET /api/qq/health 读它
+qqStatus.provide(name, service) / qqStatus.service(name) // 运行时对象登记：group（引擎、设置、判断模型、语料库）、outreach、memberJobs、corrections
 qq.pairing.issueCode() / qq.pairing.owner() / qq.pairing.reset()
 ```
 
 体检（`lib/ui/qq-health.js`）：控制台的 QQ 页显示结论、每条问题的下一步、存活判据、关键状态、交班进度、配置摘要和主人配对；只在登录后可见。
 OneBot 端口上不用登录的只有 `/shall/qq/health`，返回 `{ ok, alive, connections, version, detail }`，不带 chatId、群名、bot 账号、路径和配置。
 
-QQ 工具在 `execute(args, exec)` 里用 `exec.agent.session.header` 判调用方：QQ 会话只能作用于自己所在的聊天，你自己的会话可作用于 scope 内任何聊天，拿不到 header 一律拒绝。这一层与 privacy 的工具等级叠加，不互相替代。
+QQ 工具在 `execute(args, exec)` 里用 `exec.agent.session.header` 判调用方：QQ 会话只能作用于自己所在的聊天，你自己的会话可作用于 scope 内任何聊天，拿不到 header 一律拒绝。
+这一层与 privacy 的工具等级叠加，不互相替代。工具：`shall_qq_send`、`shall_qq_history`、`shall_qq_summary`（按需群总结：取某群最近一段时间的聊天，由模型自己写总结）、
+`shall_qq_chats`、`shall_qq_alive`、`shall_qq_memory`、`shall_memory_recall`（按关键词翻记忆，只翻调用方看得到的范围：QQ 会话 = 本聊天 + 本群群友，你自己的会话 = `owner` + `owner:work`）、`shall_meme_lookup`。
 
-点名（UX 第 23 条，`lib/qq/pipeline.js`）：群里默认档位 `mention`，下面几种都算叫 bot，结果写在 `decision.addressedBy`：
-`at`（@ bot）、`reply`（回复 bot 发过的消息：先查最近 500 条 bot 发出的 message_id，查不到时取回引用原文看发送者）、
+点名（`lib/qq/pipeline.js`）：群里默认档位 `mention`，下面几种都算叫 bot，结果写在 `decision.addressedBy`：
+`at`（@ bot；@全体成员不算）、`reply`（回复 bot 发过的消息：先查最近 500 条 bot 发出的 message_id，查不到时取回引用原文看发送者）、
 `name`（消息里出现 `participation.aliases` 里的名字；写成“群号:名字”的只在那个群生效）、`poke`（戳一戳 bot，同一会话 60 秒内只响应一次，`participation.poke=false` 关闭）。
 
-引用（UX 第 25 条，`lib/qq/onebot/quote.js`）：消息带 reply 段时用 `get_msg` 取回原文（3 秒超时），
+引用（`lib/qq/onebot/quote.js`）：消息带 reply 段时用 `get_msg` 取回原文（3 秒超时），
 在正文前接一行 `[引用 发送者: 原文]`（原文压成一行、最多 200 字）；引用的是 bot 自己说的话时发送者后面标“(你)”；取不到原文时如实写“原文取不到”。
 
-## 7. 进程内信号总线 `core.signals`
+入站合并（`lib/qq/merge.js`）：同一个人在同一个聊天里连发的话，安静 `participation.mergeMs`（默认 1200）毫秒后合成一条再交给常驻会话；
+换人说话、带引用、带合并转发、戳一戳都不合并，而且先把攒下的放行。`mergeMs: 0` 关闭。
+
+投递给常驻会话的正文开头是来源标注 `[来自 QQ 群 <群号>，发言人 <昵称>（QQ <QQ号>，消息号 <消息号>）]`（私聊没有括号里的部分），
+模型要用 `<at id>` / `<quote id>` 时只能用这里给出的号。被叫到时前面还会附“【群里刚才在聊……】”背景（只作本轮背景，不进记忆）。
+
+## 7. 进程内信号总线 `lib/core/signals.js`
 
 ```js
-core.signals.emit(event)  /  core.signals.on(fn) → disposer
-event = { kind, source: 'qq'|'owner', scope?, chatKey?, sessionId, seq?, at, quote?, confidence?: 'high'|'low',
-          memoryRevision?, personaId?, prevAssistant? }
+signals.emit(event)  /  signals.on(fn) → disposer  /  signals.recent(limit)
+event = { kind, source: 'qq', scope?, chatKey?, sessionId?, seq?, at, quote?, confidence?: 'high'|'low', memoryRevision?, prevAssistant? }
 kind: 'correction' | 'tool-fail' | 'gui-takeover' | 'handoff-miss' | 'not-like' | 'followup'
     | 'interject-engaged' | 'interject-rejected' | 'bot-recalled' | 'bot-muted' | 'interject-silence'
 ```
 
-QQ 侧只采集、不下结论；判定和落账在 `lib/adapt/correction.js`。依据 correction-mining 的结论，只用高精度判据，宁漏勿错。
+采集（`lib/conversation/signals.js` 的 `SignalCollector`，订阅 `session/event`，只管常驻对接会话）：
+
+| 信号 | 条件 | 置信度 |
+|---|---|---|
+| `gui-takeover` | 常驻会话里出现不是插件发起的用户回合（同一会话 5 分钟内最多报一次） | high |
+| `tool-fail` | 同一个工具连续失败：第 2 次报一次，之后每多 3 次再报一次 | high |
+| `correction` / `followup` | 用户的话**句首**是“不对 / 别这样 / 我说的是……” / “什么意思 / 没懂 / 再说一遍”，原话经脱敏、≤120 字 | low |
+| `interject-*`、`bot-recalled`、`bot-muted` | 群决策引擎的插话反馈（第 8 节） | low |
+| `handoff-miss` | 交班回看（第 13 节） | low |
+
+落账（`lib/conversation/correction.js` 的 `CorrectionLedger`）保守：规则判纠正的准确度不高（调研里 F1≈0.46），所以**不自动改已有记忆**，
+只按聊天范围记账（控制台可查），并在用户明确纠正时记一条**候选**的 `avoid`（“被纠正过：……”，同一个聊天 10 分钟内最多一条，等用户在记忆页确认）。
+QQ 侧的信号只对应该聊天自己的范围（`chat:*` 或主人私聊的 `owner:chat`），绝不写 `owner` / `owner:work`。
 
 ## 8. 群聊回复决策 `lib/group/`
 
 ```js
-group.onInbound({ chatKey, messageId, senderId, senderName, at, text,
-                  addressed: null|'at'|'reply-to-bot'|'name'|'poke', mentionsOthers, isCommand, fromBot,
-                  quote: null|{ senderId, text, isBot } })
-group.onDecision(fn)   // fn({ chatKey, respond, reason, anchorMessageId, mode: 'called'|'present'|'active' })
-group.onBotReply({ chatKey, chars, at })
-group.snapshot(chatKey?)
+const engine = new GroupEngine({ config, settings, judge, memory, signals, botName })
+engine.onInbound({ chatKey: 'group:<群号>', messageId, senderId, senderName, at, text, addressed: ''|'at'|'reply'|'name'|'poke',
+                   mentionsOthers, isCommand, fromBot, replyToMessageId })
+  // → { respond, wait, mode: 'called'|'present'|'active'|'', reason, closing?, anchorMessageId }   同步返回
+engine.onDecision(fn)        // 等时机的那种：到时间后 fn({ chatKey, respond, reason, mode, anchorMessageId, score?, threshold?, judgeReason? })
+engine.noteBotReply({ chatKey, chars, text, at, messageId })   // 扣精力、记入最近消息、续在场、开始观察插话反馈
+engine.noteTurnOutcome(chatKey, { spoke })  /  engine.reminderFor(chatKey)   // 连续 K 轮没开口时的提醒
+engine.contextFor(chatKey, { excludeMessageId, excludeMessageIds })          // 群里最近的几条，已带过的不重复
+engine.noteRecall(chatKey, messageId, { operatorIsBot }) / engine.noteBan(chatKey, banned)
+engine.settingsFor(groupId) / engine.snapshot(chatKey?) / engine.ignoreSender(groupId, qq, reason)
 ```
 
-五层顺序：硬规则 → 在场状态 → 等时机 → 精力与冷却 → 判断模型（只在 `active` 档）。默认档位 `mention`。精力默认值照天使之心：初始 100、下限 −100、每秒恢复 0.6、每次 14 + 字数 × 0.12。
+四档（默认 `mention`）：`silent` 只记录；`mention` 被叫到才回；`present` 点名之后，被它回复过的人 `present.minutes` 分钟或 `present.messages` 条之内接着说可以不再 @；
+`active` 没人叫也可能插话。五层，前四层不调模型：
 
-## 8.1 主动私聊主人 `lib/outreach/`（PLAN 第 45 条，阶段 2）
+1. **硬规则**：潜水档不回；被叫到的一律回（同一个人 60 秒内最多 6 次，另一个 bot 连环 @ 10 分钟内最多响应 2 次）；没被叫到时，命令消息、只 @ 了别人、别的 bot 说的、静默时段、被禁言、被绕开的人、对话已收尾，都不接。
+2. **在场状态**：见上。对方在在场期间说了附和/道别（“好的谢谢”“晚安”）就收尾，`closureMs`（默认 20 分钟）内不靠在场状态或概率插话；被叫到照常回，只是提示里带一句“对方像是在收尾”。
+3. **等时机**：没被叫到的先等群里安静 `timing.quietMs`；新消息替换触发点；同一个群同一时间只排一次、只跑一次判断。
+4. **预算**：精力（发言扣 `base + 字数 × perChar`，乘 `1.5 − eagerness`，按时间恢复）、两次发言的最短间隔、每小时主动插话上限、对话疲劳（连续主动聊久了门槛升高）。被叫到时跳过。
+5. **判断**（只在 `active`）：便宜模型（默认 `deepseek-official/deepseek-flash`，不可用时退回宿主默认模型并在控制台说明）按五个维度打分（相关 25%、意愿 20%、社交适宜 20%、时机 15%、连贯 20%）。
+   JSON 严格校验，格式不对、超时、模型不可用都当“不回”。阈值 `8 − 3.5 × eagerness`，再加疲劳和历史反馈的调整（最近被嫌弃比例高 +1.5，经常被接住 −0.5，群记忆里有“这个群不喜欢 bot 主动搭话” +1）。
 
-以 SurfCore `src/purpose-engine.js`（MIT）为蓝本：纯逻辑（排程、目标假设、提示词、备忘解析）与副作用（定时检查、投递、回执）分开。
+插话反馈（`lib/group/feedback.js`）：主动插话后 5 分钟内，有人回复/@ 它 = `engaged`；说“闭嘴 / 没问你”（要出现在插话后的前 3 条消息里，或明确对 bot 说）、消息被别人撤回 = `rejected`；
+被禁言 = `muted`；没人理 = `silence`。结果写进 `groups.json` 的接住率，被嫌弃满 2 次在该群记一条低置信度偏好，走 `signals` 总线。
 
-- 只私聊、只发给配对的主人；群聊永远不主动开口。默认关，在控制台打开。
-- 闸门：总开关、安静时段 23:30–08:30、每天最多 4 次、两次间隔 2.5–5 小时随机、主人 30 分钟内说过话不发、常驻会话忙不发、没有配对的主人不发。
-- 下次发送时间落盘，每次检查重新计算；重启时把在途的一轮记为 interrupted，不补发。每天的次数在投递时就扣。
-- 有零副作用的预览：真读素材、真拼提示词，不建会话、不发送、不写状态。
-- 目标来自统一记忆层：主人范围的 `intent`/`promise`（第 42 条的“待续”）和 owner 记忆；主人的回复按第 44 条调整置信度。
+运行时群设置 `lib/group/settings.js`（`groups.json`）：准入 = 配置里的 `qq.scope.groups`（含 `*`）∪ 控制台打开的群，黑名单优先；
+每个群的有效设置 = 全局默认 ← `group.templates[群号]` ← 控制台写下的覆盖（`settingsForGroup`）。没接入的群只记“见过”（群号、群名、条数），不记内容。
 
-## 9. 宿主 HTTP 路由
+## 8.1 主动私聊主人 `lib/outreach/`（PLAN 第 45 条）
 
-一条宿主前缀路由 `/shall/api/`，路由表 `{ method, path, auth: 'dsh'|'console'|'public', handler }` 集中在 `lib/ui/routes.js`。
-QQ 侧和其他模块只提供处理函数。OneBot 端口（默认 6700）只留反向 WS 和最小健康 JSON `/shall/health`。
+以 SurfCore `src/purpose-engine.js`（MIT）为蓝本：纯逻辑（`logic.js`：挑话题、拼提示、回复分类）与副作用（`index.js`：落盘、闸门、投递）分开。
+
+- 只私聊、只发给配对的主人；群聊永远不主动开口。**默认关**，在控制台“主动私聊”页打开。
+- 话题只来自统一记忆层：主人聊天片 `owner:chat` 里还 active 的 `intent`（回合末尾备忘的“待续”）和 `promise`，按重要度和置信度加权随机挑；
+  最近 `topicCooldownDays`（默认 3）天提过的、被拒绝的不再挑。**没有合适的话题就不发**，不靠定时问候凑数。
+- 闸门（预览逐条列出，真发和预览用同一份逻辑）：总开关、已配对、有 QQ 连接、不在安静时段（23:30–08:30）、没超每日上限（4）、
+  到了下次时间、主人 30 分钟内没说过话、常驻会话不忙且不在交班、有值得跟进的事。
+- 下次发送时间落盘，每次检查重新算；刚打开或重启后至少再等 `minGap/2`，**不补发**；发到一半进程没了，记为 interrupted。每天的次数在投递时就扣（模型回合已经花钱了）。
+- 投递的是一段提示，让常驻会话**自己决定**说不说（“不合适就只回 `<refuse/>`”）。
+- 主人 6 小时内的回复当低置信度反馈：负面（“不用了/没空”）→ 这件事划掉（`memory.complete`）并 7 天不再提；正面 → 重要度 +1；中性 → 只清掉“在等回应”；连续两次没回应 → 划掉。
+- 预览零副作用：真读记忆、真算闸门、真拼提示词，不发送、不写状态。
+
+## 9. HTTP 路由
+
+宿主前缀路由 `/shall/api/`（设置页，`lib/ui/http.js`）。OneBot 端口（默认 6700）只留反向 WS 和最小健康 JSON `/shall/qq/health`。
+本机网页控制台（`lib/ui/console-server.js`，只监听 127.0.0.1，登录 + CSRF）的接口都在 `/api/` 下，路由表在 `lib/ui/console-api.js`，QQ 侧的接口在 `lib/ui/console-routes-qq.js`：
+
+| 页面 | 接口 |
+|---|---|
+| 概览 / 画像 / 权限 / 人格 / 技能 / 审计 | `/overview`、`/profile*`、`/privacy`、`/sessions`、`/personas*`、`/skills*`、`/audit`、`/jobs*` |
+| QQ | `GET /qq/health`、`/qq/owner`（配对）、`/qq/chats`、`/qq/members` |
+| 群聊 | `GET /group`；`PUT /group/:id/admit`、`/group/:id/settings`；`DELETE /group/:id`；`POST /group/:id/forget-member`（“忘掉我”） |
+| 主动私聊 | `GET /outreach`；`PUT /outreach`；`POST /outreach/preview`、`/outreach/reset` |
+| 梗百科 | `GET /meme`；`POST /meme/import`；`PUT /meme/settings`；`POST/DELETE /meme/sync`；`DELETE /meme/archive`；`/meme/slang*` |
+| 记忆 | `GET /memory/scopes`、`GET /memory?scope=&status=&kind=&q=`；`POST /memory/:id/judge`、`/memory/purge` |
+| 信号 | `GET /signals` |
 
 ## 10. 宿主接口（本机 `@deepseek-ai/dsh` 0.2.1-alpha.1 核对过）
 
@@ -316,27 +380,65 @@ QQ 侧和其他模块只提供处理函数。OneBot 端口（默认 6700）只�
 
 没核对过的：桌面端 Electron 转发（不在 npm 包里），真机冒烟时确认。
 
-## 11. 梗百科 `lib/meme/`（PLAN 第 46 条，阶段 2）
+## 11. 梗百科 `lib/meme/`（PLAN 第 46 条）
 
 来源：`astrbot_plugin_memewiki` v1.7.0（MIT，作者 in1t1a1）。代码思路照搬，Python 改写成 JS，借用处在文件头注明来源和许可。
 
-**词库数据不随本插件分发**。memewiki 自带的 `memes.db`（6668 条，16 MB）内容来自 cnmeme.wiki，版权归该站和原作者。我们提供两种拿词库的办法，都由用户在控制台里点：
-- 从本地导入：选一个 memewiki 的 `memes.db`（表 `memes(title, slug, tags, usage, origin, other, summary)`），复制到 `$DSH_HOME/shall/meme/memes.db`；
-- 从 cnmeme.wiki 公开只读接口增量同步（`GET /api/v1/public/memes`、`/memes/{slug}`），限速 0.35 秒一次，遇到 429 退避。**默认关**。这是本插件第一个出站请求，`test/selftest.mjs` 的“宿主侧不发网络请求”扫描要为 `lib/meme/sync.js` 单独放行并写明理由。
+**词库数据不随本插件分发**。memewiki 自带的 `memes.db`（6668 条，16 MB）内容来自 cnmeme.wiki，版权归该站和原作者。拿词库的办法都由用户在控制台“梗百科”页里点：
+- 从本地导入：选一个 memewiki 的 `memes.db`（表 `memes(title, slug, tags, usage, origin, other, summary)`），复制到 `$DSH_HOME/shall/meme/memes.db`；少于现有条数的词库拒绝覆盖，除非强制。
+- 联网同步（**默认关**）：从 cnmeme.wiki 公开只读接口增量同步（`GET /api/v1/public/memes?limit=30&offset=N` 列表按更新时间倒序，`GET /api/v1/public/memes/{slug}` 详情，slug 是小写标题），
+  限速 0.35 秒一次，遇到 429 按 Retry-After 退避（最多 60 秒）；遇到整页没变就停；个别详情失败只记数；列表中断则本次作废、已有词库不动；可随时停，下次接着来。
+  同步往 `memes.db` 里 `INSERT OR REPLACE`，并多建一张 `meme_sync(slug, updated_at)` 记更新时间。
+
+联网是本插件**唯一**的出站请求，全部在 `lib/meme/sync.js`（`test/meme-online.mjs` 守着：lib 里只有这个文件含出站请求）。
 
 读库用 Node 自带的 `node:sqlite`，只读打开，每次查询开连接、用完就关（memewiki 在 Windows 上吃过一直攥着句柄导致升级失败的亏）。
 
-**查词顺序**：本群黑话（记忆层 `kind:'slang'`，范围 `chat:group:<号>`）→ 词库精确匹配 → 检索存档（查过的结果，默认 90 天；查不到的负缓存 3 天）→ 联网（只在用户打开同步和联网时）。
-
-**什么时候预查**（照搬 memewiki 的闸门，零成本规则先挡）：
-- 明确在问梗（“X 是什么梗 / 啥意思 / 怎么接 / 出处 / 谐音 / 缩写”）：直接查；
-- 2–10 字的裸词、不在口头禅表里：查本地，本地没有才过模型闸门；
-- 请求类（发图、点歌、帮我、评价）、游戏数值、指代（这个 / 右边）、疑问整句、口头禅：不查；
-- 模型闸门用 `group.judge` 同一个 DeepSeek 配置，1.2 秒超时就放行，结果缓存 10 分钟。
+**查词顺序**：本群黑话（记忆层 `kind:'slang'`，范围 `chat:group:<号>`）→ 词库精确匹配 → 检索存档 → （联网打开时）联网。
+- 检索存档 `search_archive.json`（`archive.js`）：查到的存 90 天，没查到的存 3 天，最多 2000 条。只存联网查到的结果；联网出错不存档（别把“出错”存成“没有这个梗”）；
+  模型自己的说法、群友说的“XX 就是……”不进存档（存档对所有群通用，被带偏就是所有群一起错），群里的说法只能存成该群自己的黑话。
+- 联网查词前的闸门：零成本规则先挡（`rules.js` 的 `worthLookup`：明确在问的词直接查；请求类、游戏数值、指代、疑问整句、口头禅不查），说不准的短词再过模型闸门（`gate.js`，
+  同一个便宜模型，1.2 秒没回就放行，结果缓存 10 分钟，模型可以把要查的词改得更准）。
 
 **怎么用上**：
 - QQ 消息投递进常驻会话时，命中的词条作为一段附加背景跟着这条消息（“【梗百科】标题 / 怎么用、怎么接 / 出处（仅用于理解）”，最多 900 字），不进记忆、不进系统提示；
-- 工具 `shall_meme_lookup`：模型拿不准时自己查；
-- 前台约定段（`shall:frontdesk`）加五条用法：拿不准先查、查到先接梗别科普、只有被问才讲出处、查不到就说不知道、别用客服腔；
-- 群黑话：控制台里按群增删改，存成记忆层的 `slang`，用户裁决那一套照样能用（不对、过时了、别记）；
-- 控制台的梗卡片只在控制台里看，不渲染成图片发到 QQ（这一版不做图片卡片）。
+- 工具 `shall_meme_lookup`：模型拿不准时自己查（显式查词允许联网）；
+- 前台约定段（`shall:frontdesk`）有梗和黑话的五条用法；
+- 群黑话：控制台里按群增删改，存成记忆层的 `slang`，用户裁决那一套照样能用；
+- 梗卡片只在控制台里看，不渲染成图片发到 QQ。
+
+## 12. 回复格式：输出标签与回合末尾的内部备忘 `lib/conversation/reply-tags.js`
+
+模型这一条回复先过 `parseReply()`（`ProgressRelay` 的 `outputFilter`），只处理代码块之外的内容，认不出的标签原样保留：
+
+| 写法 | 效果 |
+|---|---|
+| `<refuse/>`（也认 `<silent/>`） | 这一回合不说话，整段回复都不发，也不补“这一轮结束了”；`<refuse ignore="QQ号"/>` 同时记下“主动搭话时绕开这个人”（他 @ bot 时照常回） |
+| `<at id="QQ号"/>` | 群里 @ 某人；号必须是该群 30 分钟内说过话的人，否则丢掉这个 at |
+| `<quote id="消息号"/>` | 引用某条消息回复；号必须是该群最近的消息，否则丢掉 |
+| `【备忘】【目的】…【状态】完成 / 待续 / 跳过【待续】…` | 不发到 QQ。待续（≤3 条，每条 ≤80 字）存成 `intent`（文本带“待续：”前缀，模型来源，置信度 0.5，3 天后过期），下次注入时模型能看到；完成 → 划掉目的相近的待续（`memory.complete`）；跳过 → 当作这轮没开口 |
+
+群里默认引用触发它的那条消息回复（只加在这一回合的第一条），最近 2 分钟内有 ≥3 个不同的人说话时再 @ 提问的人；一条消息超过 `group.reply.maxChars` 就在段落/句末分条，条间按打字速度留间隔。
+连续 `silentReminderAfter`（默认 6）次没开口，下一次提示里追加一句提醒。格式说明写在前台约定里（`REPLY_FORMAT_HELP`），备忘靠模型照着写，没写也没有副作用。
+
+## 13. 群成员记忆、群概况冷启动、目标归属、交班回看
+
+- **群成员记忆**（`lib/conversation/members.js`，默认开，`group.members`）：群里没 @ bot 的消息只进语料库、不进会话，所以从语料库里提取：每个群每 6 小时最多一次，每次最多 20 位新发言 ≥5 条的群友，
+  每人最多 3 条（称呼、关系、偏好、说话风格、近期在做的事），写 `member:<群号>:<QQ号>`，只在该群可见。被“忘掉我”屏蔽过的范围，记忆层直接丢弃写入。
+- **群概况冷启动**（`group.coldStart`）：第一次接入一个群、最近 30 天语料 ≥200 条时生成一份，全部是 `candidate`，不注入，在记忆页转正或删掉；每个群只做一次。
+- **目标归属**：交班和空闲整理的提取提示词要求给“群友自己的愿望、计划、喜好”加 `about: QQ号`，写到他名下 `member:*`，不写成 bot 自己的偏好；群里成员记忆关着时这类碎片直接丢弃。
+- **交班回看**（`lib/conversation/handoff-miss.js`）：交班时留下上一代最后 15 条用户原话；新一代前 3 次空闲整理里，用户的话与它的 3-gram 相似度 ≥0.4、
+  且和该聊天现有记忆相似度 <0.3 的，补成记忆（模型来源、置信度 0.5、带原话出处）并发 `handoff-miss` 信号，每次最多 2 条。
+- 这些都用同一个便宜模型（`lib/core/cheap-model.js`：配置的模型不可用时退回宿主默认模型，状态在控制台“群聊”页），输出当不可信输入：只取固定字段、限长、QQ 号必须是挑出来的那几位。
+
+## 14. 图片 `lib/qq/onebot/image.js`
+
+消息里的图片随消息一起交给常驻会话的模型看（`participation.images`，默认开），插件自己不调视觉模型、不下载 URL：
+
+1. 由 NapCat 经 OneBot 的 `get_image` 取回（本机，不出站），返回 `base64` 就直接用，返回绝对路径就读那个文件；每条消息最多 `maxImages`（3）张，单张 ≤ `maxImageBytes`（4 MB）；
+2. 类型只看魔数（PNG / JPEG / GIF / WebP），不看扩展名，不是图片或太大就少一张；
+3. 以 `{ type: 'image', mediaType, data(base64) }` 放进 `sessions.prompt` 的 content。宿主在 prompt 接口里存成附件，并核对当前会话的模型是否支持图片输入，
+   不支持就抛 `MODEL_DOES_NOT_SUPPORT_IMAGES`（`dsh-api-session-controller` 的 `prompt()`）；bridge 退回纯文字重发，10 分钟内不再带图，正文里如实写“你看不到”。
+
+正文末尾的说明：`（随消息附了 N 张图。）` / `（……另有 N 张没取到。）` / `（这条消息带图片，但当前模型不支持看图，你看不到……）`，让模型如实说看不到，不要猜。
+活跃档的判断模型目前只看文字（图片是 `[图片]` 占位）。

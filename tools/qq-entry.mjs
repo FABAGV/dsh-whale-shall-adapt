@@ -4,8 +4,9 @@
  *   连接层、状态路由、凭据异步载入、disposer 清理
  *   workspace 创建（含目录落盘）、session 创建、任务投递、会话事件与 QQ 回传
  *   工具注册与 scope 门控、配置 Schema 与自动设置页、语料库与合并转发展开
- *   v2：任务与闲聊分流、每任务独立 session、并发上限与排队、单任务取消、跑完归档
- *   v3：turn/end 不等于任务结束 —— 未决提问/审批/活动/inbox/多回合都不许归档
+ *   任务与闲聊都进同一台常驻对接会话（分诊只是提示）、不另起任务会话
+ *   群聊：点名 / 在场 / 活跃档、群背景、入站合并、引用回复、输出标签与内部备忘、图片随消息、运行时群设置
+ *   turn/end 不等于任务结束 —— 未决提问/审批/活动/inbox/多回合都不许归档
  *   分类器与待办判据（纯函数断言，不依赖连接）
  *
  * 两路驱动力：
@@ -51,16 +52,8 @@ const WORKSPACE_ROOT = process.env.ENTRY_ROOT ?? path.join(os.tmpdir(), 'dsh-wha
 /** 每次运行都用全新的状态目录：断言不该被上一次运行的残留绑定影响 */
 const STATE_DIR = process.env.ENTRY_STATE_DIR ?? path.join(os.tmpdir(), `dsh-whale-shall-adapt-entry-${PORT}-${Date.now()}`)
 
-/**
- * 是否开启 v3 的常驻对话会话（`conversation.enabled`）
- *
- * **两趟跑**（这是刻意的，不是省事）：
- *   - `ENTRY_CONV=0`（默认）：只跑 v2 的 121 条断言。这一趟证明：
- *     "关掉开关行为逐字不变" —— 回归保命线
- *   - `ENTRY_CONV=1`：先跑同样的 121 条，再跑新增的常驻会话/交班/碎片记忆断言
- *     因为 mock 阶段的行为在两种模式下一致（mock 只走连接层与 v2 任务链路），
- *     同一条断言在两趟里都必须绿 */
-// v2 回滚路径已删除：只剩常驻对接会话这一条路，下面的 `CONV` 恒为 true。
+// 常驻对接会话是唯一的一条路（早先的“每任务一台独立会话”回滚路径已经删除），所以下面的 `CONV` 恒为 true，
+// 下面带 `if (CONV)` 的块都会跑。
 const CONV = true
 // 工具在宿主里总带着调用方会话；这里模拟“你自己在 DSH 里的会话”（不属于任何 QQ 聊天，不受聊天范围限制）。
 const OWNER_EXEC = { agent: { session: { header: { id: 'owner-entry-test', cwd: 'D:\owner' } } } }

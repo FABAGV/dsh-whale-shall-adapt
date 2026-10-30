@@ -1,10 +1,10 @@
 ﻿#Requires -Version 5.1
 <#
-    dsh-prompt-adapt 一键安装器（Windows / PowerShell）
+    dsh-whale-shall-adapt 一键安装器（Windows / PowerShell）
 
     ── 为什么需要它 ────────────────────────────────────────────────────────
     三条"官方"路线各自卡在一个前置条件上：
-      · `dsh plugin --profile <p> add dsh-prompt-adapt`  → 已发布到 npm，这条现在能用
+      · `dsh plugin --profile <p> add dsh-whale-shall-adapt`  → 已发布到 npm，这条现在能用
         （走 `registry.npmmirror.com` 镜像；桌面 profile 除外，见下面第三条）；
       · `dsh plugin --profile <p> add github:FABAGV/...` → pnpm 会先跑 `git ls-remote`，
         本机没有 git 就直接失败（安装 github: spec 必须有 git）；
@@ -21,8 +21,8 @@
         .\install.ps1                      # 自动挑 profile（desktop 优先），装默认版本
         .\install.ps1 -Profile web         # 指定 profile
         .\install.ps1 -Tag main            # 装 main 分支最新代码（不依赖 release）
-        .\install.ps1 -File .\dsh-prompt-adapt-0.2.0.tgz   # 用本地 tgz
-        .\install.ps1 -Uninstall           # 卸载（保留用户数据 ~/.dsh/prompt-adapt）
+        .\install.ps1 -File .\dsh-whale-shall-adapt-0.1.0.tgz   # 用本地 tgz
+        .\install.ps1 -Uninstall           # 卸载（保留用户数据 ~/.dsh/shall）
         .\install.ps1 -WhatIf              # 只打印会做什么
 #>
 [CmdletBinding()]
@@ -31,7 +31,7 @@ param(
     [string]$Profile,
 
     # GitHub release tag（默认桶里那个）；`main` = 直接用分支归档，不依赖 release
-    [string]$Tag = 'v0.2.0',
+    [string]$Tag = 'v0.1.0',
 
     # 下载通道：auto 依次尝试 ghproxy → ghfast → ghproxynet → 直连
     [ValidateSet('auto', 'ghproxy', 'ghfast', 'ghproxynet', 'direct')]
@@ -60,8 +60,8 @@ try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 } catch { }
 
-$PackageName = 'dsh-prompt-adapt'
-$Repo        = 'FABAGV/dsh-prompt-adapt'
+$PackageName = 'dsh-whale-shall-adapt'
+$Repo        = 'FABAGV/dsh-whale-shall-adapt'
 
 # ── 输出小工具 ────────────────────────────────────────────────────────────
 function Say([string]$Message, [string]$Kind = 'info') {
@@ -235,7 +235,7 @@ function Update-Bundles([string]$ProfileDir, [string]$Name, [bool]$Enable, [stri
     #   而 PowerShell 5.1 的 ConvertTo-Json 会写成 4 空格缩进 + 冒号对齐（`"name":  "x"`），
     #   还会把路径里的反斜杠转义成 `\\`。文件仍然合法，但和 App 的写法不一致，
     #   用户下次在插件页点一下开关就会看到整份文件被重排。用 node 走同一条序列化路径。
-    $helper = Join-Path $env:TEMP 'dsh-prompt-adapt-bundles.cjs'
+    $helper = Join-Path $env:TEMP 'dsh-whale-shall-adapt-bundles.cjs'
     $helperSource = @'
 const fs = require('node:fs')
 const [file, action, name] = process.argv.slice(2)
@@ -302,7 +302,7 @@ if ($Uninstall) {
     if ($WhatIf) { Say "（WhatIf）会 pnpm remove $PackageName 并把它从 bundles 移除"; return }
     Update-Bundles -ProfileDir $profileDir -Name $PackageName -Enable $false -Node $tools.Node
     Invoke-Pnpm -Node $tools.Node -Pnpm $tools.Pnpm -PnpmArgs @('remove', $PackageName) -WorkingDir $profileDir
-    Say "已卸载。用户数据（画像/自定义文本）仍在 $(Join-Path (Resolve-DshHome) 'prompt-adapt')，需要的话手动删。" ok
+    Say "已卸载。用户数据（画像/自定义文本）仍在 $(Join-Path (Resolve-DshHome) 'shall')，需要的话手动删。" ok
     return
 }
 
@@ -385,4 +385,4 @@ if ($profileName -eq 'desktop') {
 } else {
     Say "  重启用这个 profile 的宿主进程。"
 }
-Say "  插件数据在 $(Join-Path (Resolve-DshHome) 'prompt-adapt')（卸载不会删）。"
+Say "  插件数据在 $(Join-Path (Resolve-DshHome) 'shall')（卸载不会删）。"

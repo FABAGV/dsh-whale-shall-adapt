@@ -277,6 +277,23 @@ console.log('I3. 多条引文与撤回后重新支持')
   m.dispose()
 }
 
+console.log('I2. complete（办完了）')
+{
+  const m = fresh('complete')
+  const todo = m.observe({ scope: 'chat:private:5', kind: 'intent', text: '待续：问他周末爬山的集合时间', actor: 'qq:memo' })
+  const pinned = m.observe({ scope: 'chat:private:5', kind: 'intent', text: '待续：用户钉住的事', actor: 'qq:memo' })
+  m.judge(pinned.id, 'pin', C)
+  const user = m.observe({ scope: 'chat:private:5', kind: 'intent', text: '待续：用户自己写的事', actor: 'console', origin: 'user', confidence: 1 })
+  const rev = m.revision('chat:private:5')
+  const n = m.complete([todo.id, pinned.id, user.id, 'm999999'], { actor: 'qq:memo', reason: '备忘标记完成' })
+  check('active 的转为 historical，置顶的、用户来源的、不存在的不动', n === 1 && m.get(todo.id).status === 'historical' && m.get(pinned.id).status === 'active' && m.get(user.id).status === 'active')
+  check('留在账里：历史里记了 completed 和原因', m.get(todo.id).history.at(-1).action === 'completed' && m.get(todo.id).history.at(-1).reason === '备忘标记完成')
+  check('改动让版本号增长（注入缓存会重新渲染）', m.revision('chat:private:5') > rev)
+  check('已经是 historical 的再 complete 不重复计', m.complete([todo.id], { actor: 'qq:memo' }) === 0)
+  check('historical 不进注入，但还能被召回并标“以前”', m.select(['chat:private:5'], 1000).picked.every((e) => e.id !== todo.id) && m.recall('周末爬山的集合时间', ['chat:private:5']).some((r) => r.id === todo.id && r.historical))
+  m.dispose()
+}
+
 console.log('J. 文本工具')
 check('换个说法的中文句子相似度高于无关句子', jaccard('还差参考文献', '参考文献还没弄') > jaccard('还差参考文献', '今天天气不错'))
 
