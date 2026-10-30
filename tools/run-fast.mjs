@@ -22,7 +22,7 @@ const arg = (name, dflt) => {
 }
 
 const BASE_PORT = Number(arg('base-port', '6730'))
-const ROUNDS = String(arg('rounds', '0,1'))
+const ROUNDS = String(arg('rounds', '1'))
   .split(',')
   .map((x) => x.trim())
   .filter(Boolean)

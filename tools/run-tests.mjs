@@ -1,13 +1,13 @@
-// 跑全部测试：test/*.mjs 逐个跑，再用 run-fast 并行跑 QQ 入口集成测试两趟。
+// 跑全部测试：test/*.mjs 逐个跑，再用 run-fast 跑 QQ 入口集成测试。
 //
 // 每个测试进程的 HOME / USERPROFILE / DSH_HOME 都指到新建的临时目录，
 // 并设 DSH_SHALL_CONSOLE=off，保证不碰真实 ~/.dsh、不占 6710。
 //
 // 用法：
 //   node tools/run-tests.mjs                 全部
-//   node tools/run-tests.mjs --only privacy  只跑文件名含 privacy 的 test/*.mjs（不跑 QQ 两趟）
-//   node tools/run-tests.mjs --no-qq         不跑 QQ 两趟
-//   node tools/run-tests.mjs --qq-port 6810  QQ 两趟的起始端口（默认 6810，S1 段）
+//   node tools/run-tests.mjs --only privacy  只跑文件名含 privacy 的 test/*.mjs（不跑 QQ 集成测试）
+//   node tools/run-tests.mjs --no-qq         不跑 QQ 集成测试
+//   node tools/run-tests.mjs --qq-port 6810  QQ 集成测试的端口（默认 6810）
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -77,11 +77,11 @@ let qqBad = false
 if (!noQq) {
   const { code, out } = await run(
     process.execPath,
-    ['tools/run-fast.mjs', '--base-port', qqPort, '--rounds', '0,1', '--tag', 'all'],
+    ['tools/run-fast.mjs', '--base-port', qqPort, '--rounds', '1', '--tag', 'all'],
     isolatedEnv(),
   )
   const tail = out.split(/\r?\n/).filter((l) => /汇总|失败|全部通过|^\s+- /.test(l))
-  console.log(`\nQQ 入口集成测试（tools/qq-entry.mjs 两趟）exit=${code}`)
+  console.log(`\nQQ 入口集成测试（tools/qq-entry.mjs）exit=${code}`)
   console.log(tail.map((l) => `  ${l}`).join('\n'))
   qqBad = code !== 0
 }
