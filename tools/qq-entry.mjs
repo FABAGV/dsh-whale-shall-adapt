@@ -1203,7 +1203,7 @@ mod.default.apply(root, {
   connection: { mount: 'own', host: '127.0.0.1', reversePort: PORT, token: '' },
   tasks: { workspaceRoot: WORKSPACE_ROOT },
   participation: { groupMode: 'mention' },
-  scope: { blockedGroups: ['99999'] },
+  scope: { groups: ['*'], friends: ['*'], blockedGroups: ['99999'] },
   advanced: { stateDir: STATE_DIR },
 })
 
