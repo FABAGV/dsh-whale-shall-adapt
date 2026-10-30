@@ -1,0 +1,49 @@
+# 依赖（本仓库不带 node_modules；@deepseek-ai 是指向本机 DSH 的目录联接）
+node_modules/
+package-lock.json
+
+# 插件运行时会写这些，但那是 $DSH_HOME/shall 下的事，仓库内不该出现
+shall/
+plain/
+profile-history/
+handoff/
+corpus/
+cursor.json
+state.json
+memory.json
+plugin.log
+
+# 凭据与本地配置 —— 绝不入库
+.credentials.yaml
+.env
+.env.*
+gh-token.txt
+*token*.txt
+.npmrc
+*.pem
+*.key
+auth.json
+config.toml
+console-key
+
+# 会话日志与语料（含真实对话原文，绝不入库）
+*.jsonl
+*.jsonl.zstd
+sessions/
+dump/
+qq-projects/
+qq-testenv/
+
+# 日志与临时物
+*.log
+*.tmp
+*.bak
+*.tgz
+
+# 本地探针与临时脚本
+_probe/
+*-probe.mjs
+
+# ZCode 本地状态（只有 .zcode/agents/ 入库）
+.zcode/*
+!.zcode/agents/

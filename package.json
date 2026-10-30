@@ -1,0 +1,62 @@
+{
+  "name": "dsh-whale-shall-adapt",
+  "version": "0.0.0",
+  "description": "DeepSeek Harness 插件：画像 / 人格 / 技能 / 权限 / 控制台 + QQ 通道 / 常驻对接会话 / 交班，统一记忆层。",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/ui/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "tools/mock-napcat.mjs",
+    "tools/standalone-harness.mjs",
+    "cordis.patch.yml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "install.ps1"
+  ],
+  "scripts": {
+    "test": "node tools/run-tests.mjs"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "profile",
+    "persona",
+    "qq",
+    "onebot",
+    "onebot11"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
+    }
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/schemastery": "*"
+  },
+  "license": "MIT"
+}
