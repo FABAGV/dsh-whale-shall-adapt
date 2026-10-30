@@ -8,6 +8,7 @@ import path from 'node:path'
 import { createSignals, SIGNAL_KINDS } from '../lib/core/signals.js'
 import { SignalCollector, classifyUserWords } from '../lib/conversation/signals.js'
 import { CorrectionLedger } from '../lib/conversation/correction.js'
+import { attachPersonaFeedback } from '../lib/adapt/persona-feedback.js'
 import { userWords, userTailOf, findHandoffMisses } from '../lib/conversation/handoff-miss.js'
 import { StateStore } from '../lib/conversation/state.js'
 import { ChatMemory } from '../lib/conversation/chat-memory.js'
@@ -49,6 +50,35 @@ console.log('B. 用户话语分类')
   check('普通话不算', classifyUserWords('帮我看一下这个文件') === '')
   check('来源标注和群背景会被剥掉再判', userWords('[来自 QQ 私聊，发言人 阿花]\n不对，是周三') === '不对，是周三')
   check('群背景块和梗百科附注也剥掉', userWords('[来自 QQ 群 1，发言人 甲（QQ 2，消息号 3）]\n【群里刚才在聊（插件附上的背景，不是对你说的）】\n乙: 哈哈\n\n你怎么看\n\n[附：梗百科（x）]\n某个梗') === '你怎么看')
+  check('人格反馈：短句里说“不像你 / 你怎么变了 / 太官方”', ['你今天说话不像你', '你怎么变了', '太官方了吧', '跟以前不一样'].every((w) => classifyUserWords(w) === 'not-like'))
+  check('长段话里碰巧带这几个字不算', classifyUserWords('我们公司的文案风格被老板说太官方了，所以我想让你帮我把这一段改得口语一点，别那么正式也别太啰嗦') === '')
+}
+
+console.log('B2. 人格反馈候选')
+{
+  const bus = createSignals()
+  let t = 1_000_000
+  const calls = []
+  const bound = { id: 'p1', name: '阿鲸' }
+  const personas = {
+    personaFor: (rule) => (rule.chatKey === 'group:555' ? bound : null),
+    addFeedback: (id, body) => { calls.push({ id, ...body }); return { ok: true } },
+  }
+  const attached = attachPersonaFeedback({ signals: bus, personas, now: () => t })
+  bus.emit({ kind: 'not-like', chatKey: 'group:555', sessionId: 's', quote: '你今天不像你', prevAssistant: '尊敬的用户您好' })
+  check('绑定了人格的聊天：记一条 bad 反馈，备注写明来源，带上 bot 上一句', calls.length === 1 && calls[0].id === 'p1' && calls[0].rating === 'bad' && calls[0].note.startsWith('【QQ 里被说不像】') && calls[0].reply === '尊敬的用户您好')
+  bus.emit({ kind: 'not-like', chatKey: 'group:555', sessionId: 's', quote: '又不像了' })
+  check('同一个聊天 10 分钟内最多一条', calls.length === 1 && attached.snapshot().throttled === 1)
+  t += 11 * 60 * 1000
+  bus.emit({ kind: 'not-like', chatKey: 'group:555', sessionId: 's', quote: '还是不像' })
+  check('过了冷却再记', calls.length === 2)
+  bus.emit({ kind: 'not-like', chatKey: 'private:42', sessionId: 's2', quote: '不像' })
+  check('没绑定人格的聊天：什么都不做', calls.length === 2 && attached.snapshot().noPersona === 1)
+  bus.emit({ kind: 'correction', chatKey: 'group:555', quote: '不对' })
+  check('别的信号不管', calls.length === 2)
+  attached.stop()
+  bus.emit({ kind: 'not-like', chatKey: 'group:555', quote: '不像' })
+  check('停止后不再记', calls.length === 2)
 }
 
 console.log('C. 采集')

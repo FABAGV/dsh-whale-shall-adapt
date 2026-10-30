@@ -37,6 +37,10 @@ $DSH_HOME/shall/
 
 所有写文件都走原子写（写临时文件再 rename）。`test/selftest.mjs` 里的写文件白名单照旧生效，新增写目标必须先加进白名单并写明理由。
 
+记忆库有单实例锁（`memory/memory.lock`，`lib/core/instance-lock.js`）：桌面端和命令行 profile 可能各自加载本插件，两个进程往同一个 `memory.json` 写会互相覆盖。
+后来的进程发现锁被另一个活着的进程占着（或锁文件 90 秒内被刷新过）时退成**只读**：能读、能在内存里改，但不落盘，QQ 页的体检里会报一条。持有者进程不在了、锁文件超过 90 秒没刷新、持有者就是自己（重新加载插件）时接手。
+只有记忆库有这把锁；`groups.json`、`outreach.json` 这类很小的文件仍是后写覆盖先写。
+
 ## 3. 配置
 
 一份 schema（`lib/index.js` 的 `Config`），设置页和 cordis 配置共用。`splitConfig()` 把它切给两边：
