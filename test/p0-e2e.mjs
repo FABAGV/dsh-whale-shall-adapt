@@ -142,7 +142,8 @@ root.provide('llm', {
     llmCalls.push(options)
     const body = JSON.stringify({
       entries: [],
-      unchangedIds: ['p1', 'p2', 'p3'],
+      // 旧画像启动时已导入记忆层，条目 id 是记忆 id：按当前视图回“全部没变”。
+      unchangedIds: (globalThis.__p0Service?.getState().profile?.entries ?? []).map(entry => entry.id),
       deletedIds: [],
       notes: 'e2e',
     })
@@ -173,6 +174,10 @@ plugin.apply(root, {
 })
 
 const service = root.get('shallAdapt')
+globalThis.__p0Service = service
+const viewIds = () => (service.getState().profile?.entries ?? []).map(entry => entry.id)
+// 宿主每一步都会求值画像段：这里求值一次，等于“这一版真的注入过”。
+const evaluateSection = () => sections.find(definition => typeof definition.text === 'function')?.text({})
 check('服务注册成功', !!service && typeof service.getState === 'function')
 check('定时器已排程（scanOnStart=false 时仍会排）', timers.length >= 1, `timers=${timers.length}`)
 
@@ -229,13 +234,15 @@ await waitFor(() => stateFile().profile?.version === 6, '新版本落盘')
     `cutoff=${state.lastGeneration.materialCutoff} 期望=${newest}`)
   check('生成后基线 = 15 + 12 = 27', state.lastGeneration.humanMessages === 27,
     `humanMessages=${state.lastGeneration.humanMessages}`)
-  const ledger = state.injectionLedger
-  check('注入落账记录了这一版', ledger?.version === 6, `ledger.version=${ledger?.version}`)
-  check('落账的 ids 与注入计划一致',
+  void state
+  evaluateSection()
+  const ledger = service.getState().injectionLedger
+  check('旧画像的 3 条导入了记忆层并保留', viewIds().length === 3 && viewIds().every(id => /^m\d{6}$/.test(id)), viewIds().join(','))
+  check('账本里的 ids 与注入计划一致',
     JSON.stringify(ledger?.ids ?? []) === JSON.stringify(service.getState().injection.injectedIds ?? []),
     JSON.stringify(ledger?.ids))
-  check('落账计数 p1..p3 都 >= 1',
-    ['p1', 'p2', 'p3'].every(id => (ledger?.counts?.[id] ?? 0) >= 1),
+  check('段被求值后，3 条的注入次数都 >= 1',
+    viewIds().every(id => (ledger?.counts?.[id] ?? 0) >= 1),
     JSON.stringify(ledger?.counts))
 }
 
@@ -262,11 +269,12 @@ await waitFor(() => stateFile().profile?.version === 7, 'v7 落盘')
   const state = stateFile()
   check('LLM 被调用第二次', llmCalls.length === 2, `calls=${llmCalls.length}`)
   check('画像版本推进到 7', state.profile?.version === 7, `version=${state.profile?.version}`)
-  check('账本身份跟着版本走', state.injectionLedger?.version === 7,
-    `ledger.version=${state.injectionLedger?.version}`)
-  check('p1..p3 的累计计数增加到 3',
-    ['p1', 'p2', 'p3'].every(id => state.injectionLedger?.counts?.[id] === 3),
-    JSON.stringify(state.injectionLedger?.counts))
+  const before = service.getState().injectionLedger.counts
+  evaluateSection()
+  evaluateSection()
+  const after = service.getState().injectionLedger.counts
+  check('内容没变，同一版反复求值不重复记账', viewIds().every(id => after[id] === before[id] && after[id] >= 1),
+    JSON.stringify(after))
 }
 
 console.log('\n========================================================================')

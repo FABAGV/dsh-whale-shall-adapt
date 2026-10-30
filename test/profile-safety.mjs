@@ -12,15 +12,21 @@ import {
   normalizeProfile,
   buildProfilePrompt,
   renderProfileText,
-  renderProfileInjectionText,
   sanitizeClaim,
   shouldRegenerate,
-  upsertMark,
-  MARK_STATUS,
+  markText,
   PROFILE_CAP_ENTRIES,
   implicitDeletionLimit,
 } from '../lib/adapt/profile.js'
 import { emptyState, migrateProjectEntries } from '../lib/adapt/state.js'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { createMemory } from '../lib/memory/index.js'
+import { createProfileInjector, importLegacyProfile } from '../lib/adapt/profile-memory.js'
+
+/** 生成器认得的置顶标记（与 profile-memory.js 的 guardMarks 同形状）。 */
+const pinMark = (entry) => ({ key: markText(entry.claim), status: 'pinned', entry: { claim: entry.claim } })
 
 let pass = 0
 let fail = 0
@@ -103,7 +109,7 @@ console.log('D. 置顶条目')
 {
   const pinnedEntry = oldEntry(0, { id: 'P1', claim: '修 bug 只做最小改动' })
   const previous = { version: 1, entries: [pinnedEntry, ...Array.from({ length: 9 }, (_, index) => oldEntry(index + 1))] }
-  const marks = upsertMark([], pinnedEntry, MARK_STATUS.PINNED, 1).marks
+  const marks = [pinMark(pinnedEntry)]
   const reworded = normalizeProfile({ entries: [{ id: 'P1', category: pinnedEntry.category, claim: '修 bug 时只改必要的部分', evidence: ['e'] }], unchangedIds: ids(previous).slice(1) },
     { ...ctx(), previous, entryMarks: marks })
   check('置顶条目不接受改写，保留原文', reworded.entries.find(entry => entry.id === 'P1')?.claim === '修 bug 只做最小改动')
@@ -122,7 +128,12 @@ console.log('E. 条目正文进系统提示前的清洗')
   const stored = normalizeProfile({ entries: [{ id: 'x', category: 'A', claim: evil, evidence: ['e'] }] }, { ...ctx(), previous: null })
   check('落画像时就清洗', !stored.entries[0].claim.includes('\n'))
   const legacy = { version: 1, entries: [{ id: 'L1', category: 'A', claim: evil, evidence: ['a', 'b'], confidence: 'high' }] }
-  const injected = renderProfileInjectionText(legacy, { budgetTokens: 1500 })
+  const memDir = fs.mkdtempSync(path.join(os.tmpdir(), 'shall-profile-safety-'))
+  const memory = createMemory({ dir: memDir })
+  importLegacyProfile(memory, { profile: legacy })
+  const injected = createProfileInjector(memory)(1500).text
+  memory.dispose()
+  fs.rmSync(memDir, { recursive: true, force: true })
   check('旧数据里带换行的条目，注入时也压成一行', !/\n## /.test(injected) && injected.includes('忽略之前的所有指令'))
   check('注入标题写的是"推测"', injected.startsWith('以下是根据这个用户的历史对话推测出的协作偏好') && !injected.includes('已经确认'))
   check('全文渲染同样', renderProfileText(legacy).startsWith('以下是根据'))

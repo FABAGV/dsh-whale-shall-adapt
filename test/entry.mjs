@@ -11,6 +11,7 @@
  * 运行：node test/entry.mjs（HOME / DSH_HOME 由 tools/run-tests.mjs 指到临时目录）
  */
 import fs from 'node:fs'
+import { applyGeneration } from '../lib/adapt/profile-memory.js'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
@@ -118,10 +119,10 @@ check('宿主 HTTP 前缀路由已注册', [...routes].some((r) => r.kind === 'p
 check(`QQ 反向 WS 端口 ${PORT} 在听`, listening)
 
 const service = root.get('shallAdapt')
-service.host.store.state.profile = { version: 1, entries: [{ id: 'A1', category: 'A', claim: '入口测试写入的画像条目', confidence: 'high', evidence: [] }] }
-service.host.store.saveState()
-const adaptState = JSON.parse(fs.readFileSync(path.join(tmpRoot, 'shall', 'adapt', 'state.json'), 'utf8'))
-check('画像存盘时同步进共享记忆层（留下镜像链接）', adaptState.memoryMirror?.entries?.A1?.id?.startsWith('m'), JSON.stringify(adaptState.memoryMirror?.entries ?? {}))
+applyGeneration(service.host.memory, [], [{ id: 'A1', category: 'A', claim: '入口测试写入的画像条目', confidence: 'high', evidence: [] }])
+service.host.refreshProfileView()
+const adaptEntries = service.getState().profile?.entries ?? []
+check('画像条目就存在共享记忆层里（视图里的 id 是记忆 id）', adaptEntries.length === 1 && /^m\d{6}$/.test(adaptEntries[0].id), JSON.stringify(adaptEntries))
 
 console.log('D. 卸载')
 await fiber.dispose()

@@ -14,6 +14,7 @@
  *   node test/loadtest.mjs
  */
 import fs from 'node:fs'
+import { applyGeneration } from '../lib/adapt/profile-memory.js'
 import os from 'node:os'
 import path from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
@@ -169,13 +170,11 @@ console.log('='.repeat(72))
   // 模式 1：注入来源换成画像
   service.setMode('auto')
   const stateService = root.get('shallAdapt')
-  stateService.host.store.state.profile = {
-    version: 1,
-    entries: [
-      { id: 'A1', category: 'A', claim: '习惯一句话下达任务，不写背景铺垫' },
-      { id: 'B1', category: 'B', claim: '不要在他没要求时做升级' },
-    ],
-  }
+  applyGeneration(stateService.host.memory, [], [
+    { id: 'A1', category: 'A', claim: '习惯一句话下达任务，不写背景铺垫' },
+    { id: 'B1', category: 'B', claim: '不要在他没要求时做升级' },
+  ])
+  stateService.host.refreshProfileView()
   const autoText = section.text({})
   check('切到模式 1 后段文本变成画像', autoText.includes('习惯一句话下达任务') && autoText.includes('不要在他没要求时做升级'))
   check('模式 1 时模式 2 的文本不再出现（互斥生效）',

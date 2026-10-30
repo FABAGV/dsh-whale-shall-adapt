@@ -126,7 +126,8 @@ root.provide('llm', {
     llmCalls.push(options)
     const body = JSON.stringify({
       entries: [],
-      unchangedIds: entries.map(entry => entry.id),
+      // 启动时旧画像已导入记忆层，条目 id 换成了记忆 id：按当前视图回“全部没变”。
+      unchangedIds: (service?.getState().profile?.entries ?? entries).map(entry => entry.id),
       deletedIds: [],
       notes: 'saturation fixture',
     })
@@ -194,7 +195,7 @@ await new Promise(resolve => setTimeout(resolve, 200))
 }
 
 console.log('\nB. 用户置顶一条：zeroChangeStreak 清零，自动生成重新尝试')
-const pinned = service.pinEntry('e1')
+const pinned = service.pinEntry(service.getState().profile.entries[0].id)
 check('pinEntry 成功', pinned?.ok === true, JSON.stringify(pinned))
 check('pin 之后 streak 清零', stateFile().zeroChangeStreak === 0,
   `streak=${stateFile().zeroChangeStreak}`)

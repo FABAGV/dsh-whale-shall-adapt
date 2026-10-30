@@ -80,7 +80,7 @@ heading('B. 学习只用你自己的会话')
   check('生成提示词里没有 QQ 群里别人说的话', call && !call.prompt.includes('/etc/passwd') && !call.prompt.includes('来自 QQ'))
   check('生成提示词里有你自己的话（JSON 字符串形式）', call?.prompt.includes(JSON.stringify(OWNER_LINES[0])))
   const ids = (result.profile?.entries ?? []).map(entry => entry.id)
-  check('新条目的 id 由插件分配（不是模型写的 new-1）', ids.length === 4 && ids.every(id => /^n\d+$/.test(id)), ids.join(','))
+  check('新条目的 id 由记忆层分配（不是模型写的 new-1）', ids.length === 4 && ids.every(id => /^m\d{6}$/.test(id)), ids.join(','))
 }
 
 heading('C. 注入只进你自己的会话')

@@ -19,6 +19,10 @@ const { emptyState, appendWorkingNotes, migrateProjectEntries, WORKING_NOTES_CAP
 const { normalizeProfile, buildProfilePrompt } = await import(
   pathToFileURL(path.join(HERE, '..', 'lib', 'adapt', 'profile.js')).href
 )
+const { createMemory } = await import(pathToFileURL(path.join(HERE, '..', 'lib', 'memory', 'index.js')).href)
+const { importLegacyProfile, workingNotes } = await import(
+  pathToFileURL(path.join(HERE, '..', 'lib', 'adapt', 'profile-memory.js')).href
+)
 
 let pass = 0
 let fail = 0
@@ -35,7 +39,7 @@ function check(label, condition, detail = '') {
 console.log('1. 空状态与合并')
 {
   const state = emptyState()
-  check('空状态 workingNotes 是空数组', Array.isArray(state.workingNotes) && state.workingNotes.length === 0)
+  check('空状态不带 workingNotes（笔记存在记忆层 owner:work）', !('workingNotes' in state))
   check('迁移标记默认 false', state.workingNotesMigrated === false)
 
   const added = appendWorkingNotes(state, ['项目 A 的入口在 src/a.js', '项目 A 的入口在 src/a.js', '短', '', '项目 B 用 pnpm 管理依赖', 42], 1000)
@@ -124,7 +128,11 @@ console.log('5. StateStore 载入兜底')
     'utf8',
   )
   const store = new StateStore({ dir, log: null })
-  check('载入：只保留字符串/对象 text，去重', store.state.workingNotes.length === 2, JSON.stringify(store.state.workingNotes))
+  const memory = createMemory({ dir: path.join(dir, 'memory') })
+  importLegacyProfile(memory, store.state)
+  const notes = workingNotes(memory)
+  check('旧 state 的笔记导入记忆层：只收字符串/对象 text，去重', notes.length === 2, JSON.stringify(notes))
+  memory.dispose()
   check('载入：非法迁移标记重置为 false', store.state.workingNotesMigrated === false)
 }
 

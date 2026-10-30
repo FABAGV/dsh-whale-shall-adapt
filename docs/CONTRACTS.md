@@ -109,7 +109,8 @@ const memory = createMemory({ dir, log, config: config.memory, now?: () => numbe
 memory.observe(input)
 // → { action: 'new'|'dup'|'merged'|'ask'|'conflict'|'rejected'|'dropped', id?, similarity?, conflictsWith? }
 //   input = { scope, kind, text, actor, importanceDelta?, importance?, confidence?, status?, origin?,
-//             source?: { sessionId, at, quote }, supersedes?: [id], mergeWith?: id, validUntil?, gen? }
+//             source?: { sessionId, at, quote }, sources?: [source], supersedes?: [id], mergeWith?: id, validUntil?, gen? }
+//   dup / merged 命中一条被生成器撤回（retract）或被用户“这一版先拿掉”（dismiss）的记录时，它恢复原状态（QQ 来源不恢复）。
 //   顺序：脱敏 → 文本指纹在“已忘掉”里就丢弃 → 和同一家里被否定的结论或边界近乎原样（≥ merge）就丢弃（rejected）
 //         → mergeWith 合并 → 和同范围已有记忆 ≥ merge 判 dup → 和被否定的结论 ≥ conflict 新建为候选（conflict）
 //         → ≥ ask 新建并继承旧那条的计数（ask）→ 否则 new。
@@ -124,12 +125,13 @@ memory.select(scopes, budgetTokens, policy?)   // → { picked, usedTokens, tota
 //   只选 active、不 quiet、不是 boundary；排序 pinned → importance → refs → lastSeenAt → id；
 //   policy = { reserve?: { [kind]: 比例 }, cap?: { 'kindA+kindB': 比例 }, exclude?: [kind], pinnedExempt?, trialSlots? }
 memory.render(selection, { title, intro })     // 同样输入逐字节相同；空选择返回 ''
-memory.retract(ids, { actor, reason })   // 生成器不再支持：转为 candidate
+memory.retract(ids, { actor, reason })   // 生成器不再支持：active → candidate，candidate → historical；置顶、用户来源、挂着冲突的不动
 memory.demote(ids, { actor, reason })    // 重要度 −1
 memory.recordUsage(ids, event, meta?)    // injected（按 meta.key 去重）| recalled | corrected | seen
 memory.recall(query, scopes, limit?)     // active、candidate、historical 都能召回，historical 带 historical: true
 memory.age(scope, { gen, now?, everyGens?, maxPerScope? })   // 过期、衰减、清理、单范围上限；返回 { decayed, expired, dropped }
 memory.purge(query, actor) / memory.unblock(scope, actor)   // “忘掉我”：删整个范围，可屏蔽之后的写入
+//   query 还可按 kind / status / origin 筛（给 origin 时置顶的不删）；不留文本指纹，这是“清空”不是“别记这个”。
 memory.export(query) / memory.revision(scope) / memory.onChange(listener) / memory.flush() / memory.dispose()
 ```
 
@@ -186,8 +188,15 @@ memory.export(query) / memory.revision(scope) / memory.onChange(listener) / memo
 | 别记这个 `forget` | 删除，只留文本指纹（不留原文）挡原样复述 | `boundary`：留一条边界（如“别记群友的婚恋”），只给生成器看 |
 | 别提 / 可以提 `quiet` / `unquiet` | 记着但不注入、不召回 / 恢复 | — |
 | 置顶 / 取消 `pin` / `unpin` | 保证注入（豁免预算） | — |
+| 这一版先拿掉 `dismiss` | 转为 historical，但不是禁令：生成器以后重新支持它（dup / merged）时回到原状态 | — |
 | 恢复 `restore` | rejected / historical / candidate 回到 active | — |
 | 挪片 `move` | 在主人的三片之间挪 | `scope`：目标片 |
+
+设置页沿用三个按钮，底下走裁决（`lib/adapt/profile-memory.js`）：置顶 → `pin`，封印 → `wrong`，删除 → `dismiss`；
+“恢复 / 取消置顶” → `restore` / `unpin`。画像条目本身就存在记忆层里（A → owner/trait，B → owner:work/avoid，
+C → owner:work/works，D → owner/uncertain 候选，工作笔记 → owner:work/note），`state.json` 里的 `profile` 只是从记忆层重建的视图，
+条目 id 就是记忆 id。生成结果经 `applyGeneration()` 写入：同文 → seen，改写 → supersedes，没再提到 → retract（截断那一轮不撤回）。
+旧版 `state.json` 的画像、工作笔记、置顶 / 封印在记忆层还没有画像时一次性导入。
 
 为什么换掉封印：封印要回答“新冒出来的这条是不是被封掉的那条”，靠文本相似度根本答不准（4.3 的实测）。
 裁决把问题换成用户答得了的“这条对不对、还算不算数、该不该记”，并把“不对”的正确说法记下来——
@@ -198,6 +207,8 @@ memory.export(query) / memory.revision(scope) / memory.onChange(listener) / memo
 - `owner`、`owner:work`、`persona:*` 进系统提示段（`shall:profile`、`shall:persona`，`interpolate:false`），会话中途基本不变。
 - `owner:chat`、`chat:*`、`member:*` 进上下文快照 `shall:qq-memory`（`systemPrompt.context`，order 130）。空闲整理会在会话中途改它们，用快照才不会让系统提示中途变化、作废前缀缓存。
 - 段与快照的文本按 `select()` 返回的 `key` 缓存，命中时返回同一个字符串。
+- 画像段的选取规则（`INJECT_POLICY`）：总预算 `inject.budgetTokens`（默认 1500），trait 保底 30%，avoid + works 合计不超过 50%，
+  uncertain 和 note 不注入，置顶豁免预算，两个新生试用位。只有真进了系统提示才记 `injected`（设置页预览不记）。
 
 ### 4.8 主人身份绑定
 

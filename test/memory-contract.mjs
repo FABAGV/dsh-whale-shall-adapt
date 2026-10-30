@@ -259,6 +259,24 @@ console.log('I2. 聊天里的用户（qq-user）')
   aged.dispose()
 }
 
+console.log('I3. 多条引文与撤回后重新支持')
+{
+  const m = fresh('reactivate')
+  const r = m.observe({ scope: 'owner', kind: 'trait', text: '习惯先看结论再看细节', actor: 'profile',
+    sources: [{ quote: '先说结论' }, { quote: '结论放前面' }] })
+  check('sources 数组一次写进多条引文', m.get(r.id).sources.length === 2)
+  m.retract([r.id], { actor: 'profile' })
+  const again = m.observe({ scope: 'owner', kind: 'trait', text: '习惯先看结论再看细节', actor: 'profile' })
+  check('生成器重新支持被撤回的候选：回到 active', again.id === r.id && m.get(r.id).status === 'active')
+  const d = m.observe({ scope: 'owner', kind: 'uncertain', text: '可能偏好深色主题界面', actor: 'profile', status: 'candidate' })
+  m.observe({ scope: 'owner', kind: 'uncertain', text: '可能偏好深色主题界面', actor: 'profile', status: 'candidate' })
+  check('D 类候选再次出现仍是候选', m.get(d.id).status === 'candidate')
+  const q = m.observe({ scope: 'owner:chat', kind: 'fact', text: '最近在学吉他和弦', actor: 'qq:handoff', status: 'candidate' })
+  m.observe({ scope: 'owner:chat', kind: 'fact', text: '最近在学吉他和弦', actor: 'qq:handoff' })
+  check('QQ 侧的重复不会把候选转正', m.get(q.id).status === 'candidate')
+  m.dispose()
+}
+
 console.log('J. 文本工具')
 check('换个说法的中文句子相似度高于无关句子', jaccard('还差参考文献', '参考文献还没弄') > jaccard('还差参考文献', '今天天气不错'))
 
