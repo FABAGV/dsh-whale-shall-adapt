@@ -100,6 +100,54 @@ check('只能发回这个私聊', await rejects(() => send.execute({ chat_type: 
 await send.execute({ text: '回私聊' }, as('p200'))
 check('不传默认发回这个私聊', sent.at(-1)?.chatType === 'private' && sent.at(-1)?.chatId === '200')
 
+console.log('F. 按需群总结 shall_qq_summary')
+{
+  const rowsFor = new Map()
+  const queries = []
+  const NOW = Date.now()
+  const registeredF = new Map()
+  registerQqTools({
+    ctx: { get: (n) => (n === 'tools' ? { register(d) { registeredF.set(d.name, d); return () => {} }, guard() { return () => {} } } : undefined) },
+    config: resolveConfig({ scope: { groups: ['100'], friends: [] } }),
+    log: silent,
+    send: async () => {},
+    listChats: () => [],
+    corpus: {
+      search: (q) => {
+        queries.push(q)
+        return rowsFor.get(q.chatId) ?? []
+      },
+    },
+    chatOfCaller,
+  })
+  const summary = registeredF.get('shall_qq_summary')
+  rowsFor.set('100', [
+    { kind: 'message', ts: NOW - 60_000, senderName: '乙', senderId: '2', text: '后一条' },
+    { kind: 'forward', ts: NOW - 120_000, senderName: '丙', senderId: '3', nodes: [{}, {}] },
+    { kind: 'message', ts: NOW - 180_000, senderName: '甲', senderId: '1', text: '前一条\n带换行' },
+    { kind: 'message', ts: NOW - 190_000, senderName: '甲', senderId: '1', text: '' },
+  ])
+  check('工具注册了', Boolean(summary))
+  check('没有会话头：拒绝', await rejects(() => summary.execute({ chat_id: '100' }, {})))
+  const own = await summary.execute({}, as('g100'))
+  check('群会话不传 chat_id：默认总结自己所在的群', own.chatId === '100' && queries.at(-1).chatType === 'group' && queries.at(-1).chatId === '100')
+  check('记录按时间从早到晚、换行压成一行、合并转发只写条数、空消息不要', own.count === 3 && own.transcript.split('\n')[0].endsWith('甲: 前一条 带换行') && own.transcript.includes('[合并转发 2 条]') && own.transcript.split('\n')[2].endsWith('乙: 后一条'))
+  check('默认看最近 6 小时', Math.abs((Date.now() - queries.at(-1).since) - 6 * 3600_000) < 5000)
+  await summary.execute({ hours: 1000 }, as('g100'))
+  check('小时数最多 72', Math.abs((Date.now() - queries.at(-1).since) - 72 * 3600_000) < 5000)
+  check('群会话总结别的群被拒', await rejects(() => summary.execute({ chat_id: '999' }, as('g100'))))
+  check('私聊会话不能用它总结别的群', await rejects(() => summary.execute({ chat_id: '100' }, as('p200'))))
+  check('你自己的会话必须给群号', await rejects(() => summary.execute({}, OWNER)))
+  check('你自己的会话可以总结范围内的群', (await summary.execute({ chat_id: '100' }, OWNER)).chatId === '100')
+  check('不在接入范围的群：即使是你自己的会话也拒绝', await rejects(() => summary.execute({ chat_id: '555' }, OWNER)))
+  rowsFor.set('100', Array.from({ length: 300 }, (_, i) => ({ kind: 'message', ts: NOW - (300 - i) * 1000, senderName: '甲', senderId: '1', text: `第${i}条${'啊'.repeat(150)}` })).reverse())
+  const big = await summary.execute({ max_messages: 400 }, as('g100'))
+  check('总字数有上限，留最新的并标明省略', big.truncated === true && big.transcript.length <= 12000 && big.transcript.includes('第299条'))
+  const rendered = summary.output.render({}, big)[0].text
+  check('渲染给模型的文本带说明', rendered.includes('最近 6 小时') && rendered.includes('更早的已省略'))
+  check('没有记录也能渲染', summary.output.render({}, { count: 0, hours: 6, chatId: '100', transcript: '' })[0].text.includes('没有记录'))
+}
+
 console.log(`结果：${pass} 通过 / ${fail} 失败`)
 if (fail === 0) fs.rmSync(tmp, { recursive: true, force: true })
 process.exit(fail === 0 ? 0 : 1)

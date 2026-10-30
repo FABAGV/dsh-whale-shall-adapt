@@ -246,6 +246,11 @@ function releaseAllHeld(reason = { kind: 'completed' }) {
  *   于是 `turnEnds = {kind:'blocked'}; return false`（`:906`、`:958-961`）。
  *   结果是：**注入的上下文与用户的这句话一起被吞掉**，且什么都不抛。
  *   fake 如果不复刻这一条，"往已退役会话投递"就退化成一次无害操作。 */
+/** 假宿主的开关：当前会话的模型支不支持看图；被拒绝的带图投递次数 */
+const fakeFlags = { imageSupport: true, imageRejected: 0, getImageCalls: 0 }
+/** 1x1 的 PNG（魔数是真的，插件靠魔数认图） */
+const PNG_1X1_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAHnOcQAAAAABJRU5ErkJggg=='
+
 /** 下一个回合的 assistant 正文按这个队列出（用来脚本化模型的回复，如 <refuse/>、带备忘的回复）；队列空了用默认那句 */
 const scriptedReplies = []
 function queueReply(text) {
@@ -740,6 +745,13 @@ const services = {
     },
 
     async prompt(request, _signal) {
+      // 宿主在 prompt 接口里核对模型支不支持看图：不支持就拒绝（dsh-api-session-controller 的 prompt()）
+      if ((request.content ?? []).some((b) => b?.type === 'image') && !fakeFlags.imageSupport) {
+        fakeFlags.imageRejected += 1
+        const error = new Error('Model "fake" does not support image input.')
+        error.details = { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' }
+        throw error
+      }
       const text = (request.content ?? []).map((b) => b.text ?? '').join('')
       calls.prompts.push({ ...request, text, at: Date.now() })
       log.info(`[fake-session] prompt -> ${request.sessionId} mode=${request.mode}`)
@@ -1716,6 +1728,11 @@ function createControlClient({ url, token, selfId }) {
         .join('')
       outbound.push({ chatType, chatId, text, at: Date.now() })
     }
+    if (msg.action === 'get_image') {
+      fakeFlags.getImageCalls += 1
+      ws.send(JSON.stringify({ status: 'ok', retcode: 0, data: { file: '', url: 'http://127.0.0.1:1/never-fetched.png', base64: PNG_1X1_BASE64 }, echo: msg.echo }))
+      return
+    }
     ws.send(
       JSON.stringify({
         status: 'ok',
@@ -1752,6 +1769,12 @@ function createControlClient({ url, token, selfId }) {
     ready,
     outbound,
     sendPrivate: (chatId, text) => ws.send(JSON.stringify(textEvent('private', chatId, text))),
+    /** 带一张图的私聊消息：图片段里只有 file 标识，图要靠插件用 get_image 去取 */
+    sendPrivateImage: (chatId, text, file = 'abc123.png') => {
+      const event = textEvent('private', chatId, text)
+      event.message.push({ type: 'image', data: { file, url: 'http://127.0.0.1:1/never-fetched.png' } })
+      ws.send(JSON.stringify(event))
+    },
     sendGroup: (chatId, text, options) => ws.send(JSON.stringify(textEvent('group', chatId, text, options))),
     /** 直接暴露插件的投递守卫（用来做"绕过/不绕过守卫"的对照实验） */
     gate: () => dshGate,
@@ -2224,6 +2247,46 @@ if (CONV) {
       await client.sendGroup(PG, '好的谢谢', { atBot: false })
       await sleep(1800)
       v3Checks.push(['G8b 对方像是在收尾（附和/道谢）：这轮不再接话', promptsFor(pSession?.id ?? '').length === afterFollow])
+    }
+
+    // ══ G9. 图片：随消息交给模型，模型不看图时退回纯文字 ═══════════════════
+    //
+    // 图片由 NapCat 经 get_image 取回（本机，不出站），校验魔数后放进 sessions.prompt 的 content；
+    // 宿主在 prompt 接口里核对模型支不支持看图，不支持就拒绝，插件退回纯文字并如实告诉对方。
+    {
+      const IMG = '20260'
+      const imgDir = dirOf('private', IMG)
+      await client.sendPrivateImage(IMG, '你看看这张图')
+      const imgSession = await waitValue(() => sessionsIn(imgDir)[0])
+      const withImage = await waitValue(() => promptsFor(imgSession?.id ?? '').find((p) => p.text.includes('你看看这张图')))
+      const imagePart = withImage?.content?.find((part) => part.type === 'image')
+      v3Checks.push([
+        'G9a 图片随消息交给模型：content 里有 image 段，类型以魔数为准（image/png），数据是 base64',
+        Boolean(imagePart) && imagePart.mediaType === 'image/png' && imagePart.data.startsWith('iVBORw0KGgo') && fakeFlags.getImageCalls === 1,
+      ])
+      v3Checks.push(['G9b 正文里说明“附了 1 张图”，图片 URL 没被插件去下载', Boolean(withImage) && withImage.text.includes('随消息附了 1 张图')])
+      await waitIdle(imgSession?.id ?? '')
+
+      fakeFlags.imageSupport = false
+      const rejectedBefore = fakeFlags.imageRejected
+      const promptsBeforeFallback = promptsFor(imgSession?.id ?? '').length
+      await client.sendPrivateImage(IMG, '再看一张')
+      const fallback = await waitValue(() => promptsFor(imgSession?.id ?? '').slice(promptsBeforeFallback).find((p) => p.text.includes('再看一张')))
+      v3Checks.push([
+        'G9c 模型不支持看图：第一次被宿主拒绝，退回纯文字重发，并如实说“你看不到”',
+        fakeFlags.imageRejected === rejectedBefore + 1 && Boolean(fallback) && !fallback.content.some((part) => part.type === 'image') && fallback.text.includes('不支持看图'),
+      ])
+      await waitIdle(imgSession?.id ?? '')
+      const callsBeforeCached = fakeFlags.getImageCalls
+      const promptsBeforeCached = promptsFor(imgSession?.id ?? '').length
+      await client.sendPrivateImage(IMG, '第三张')
+      const cached = await waitValue(() => promptsFor(imgSession?.id ?? '').slice(promptsBeforeCached).find((p) => p.text.includes('第三张')))
+      v3Checks.push([
+        'G9d 10 分钟内记着这台会话不看图：不再取图、不再试带图，直接说看不到',
+        Boolean(cached) && fakeFlags.getImageCalls === callsBeforeCached && fakeFlags.imageRejected === rejectedBefore + 1 && cached.text.includes('不支持看图'),
+      ])
+      fakeFlags.imageSupport = true
+      await waitIdle(imgSession?.id ?? '')
     }
 
     // ══ N13. 回传带上"它动了什么"，且**不带**工具调用次数 ══════════════

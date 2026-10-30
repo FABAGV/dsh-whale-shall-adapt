@@ -1005,6 +1005,10 @@ console.log('='.repeat(72))
     ['path.dirname(file', 'core/log.js 日志文件所在目录（状态目录下）'],
     ['this.root', 'qq/corpus.js 语料库根目录（状态目录/corpus）'],
     ['path.join(dir', 'qq/corpus.js 过期语料分片（语料库根目录下的会话子目录）'],
+    ['path.dirname(this.file', 'meme/archive.js 检索存档所在目录（状态目录/meme）'],
+    ['this.settingsFile', 'meme/index.js 梗百科设置 settings.json（状态目录/meme）'],
+    ['path.dirname(this.settingsFile', 'meme/index.js 梗百科设置所在目录（状态目录/meme）'],
+    ['path.dirname(this.dbPath', 'meme/sync.js 联网同步的词库所在目录（状态目录/meme）'],
   ])
   const offenders = []
   const used = new Set()
