@@ -117,6 +117,12 @@ check('人格段已注册（order 31，不做插值）', sections.some((s) => s.
 check('宿主 HTTP 前缀路由已注册', [...routes].some((r) => r.kind === 'prefix'), `${routes.size} 条`)
 check(`QQ 反向 WS 端口 ${PORT} 在听`, listening)
 
+const service = root.get('shallAdapt')
+service.host.store.state.profile = { version: 1, entries: [{ id: 'A1', category: 'A', claim: '入口测试写入的画像条目', confidence: 'high', evidence: [] }] }
+service.host.store.saveState()
+const adaptState = JSON.parse(fs.readFileSync(path.join(tmpRoot, 'shall', 'adapt', 'state.json'), 'utf8'))
+check('画像存盘时同步进共享记忆层（留下镜像链接）', adaptState.memoryMirror?.entries?.A1?.id?.startsWith('m'), JSON.stringify(adaptState.memoryMirror?.entries ?? {}))
+
 console.log('D. 卸载')
 await fiber.dispose()
 let closed = false
@@ -127,6 +133,9 @@ for (let i = 0; i < 40 && !closed; i += 1) {
 check('段的 disposer 都被调用', sectionDisposals >= 2, `${sectionDisposals} 次`)
 check('宿主路由已撤销', ![...routes].some((r) => r.kind === 'prefix'), `${routes.size} 条`)
 check(`端口 ${PORT} 已关闭`, closed)
+const memFile = path.join(tmpRoot, 'shall', 'memory', 'memory.json')
+const saved = fs.existsSync(memFile) ? JSON.parse(fs.readFileSync(memFile, 'utf8')) : null
+check('卸载时共享记忆层落盘，画像条目在 owner 范围', saved?.entries?.some((e) => e.scope === 'owner' && e.text === '入口测试写入的画像条目'), memFile)
 
 console.log(`结果：${pass} 通过 / ${fail} 失败`)
 if (fail === 0) fs.rmSync(tmpRoot, { recursive: true, force: true })
