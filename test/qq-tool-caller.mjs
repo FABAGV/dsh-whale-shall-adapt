@@ -9,7 +9,8 @@ import path from 'node:path'
 import { registerQqTools } from '../lib/qq/tools.js'
 import { resolveConfig } from '../lib/qq/config.js'
 import { createBindings } from '../lib/conversation/bindings.js'
-import { MemoryStore } from '../lib/conversation/memory.js'
+import { createMemory } from '../lib/memory/index.js'
+import { ChatMemory } from '../lib/conversation/chat-memory.js'
 
 let pass = 0
 let fail = 0
@@ -38,7 +39,7 @@ const chatOfCaller = (header) => bindings.resolve(header, (id) => headers[id])
 
 const sent = []
 const searched = []
-const memory = new MemoryStore({ log: silent, dir: tmp })
+const memory = new ChatMemory({ store: createMemory({ dir: tmp }) })
 const registered = new Map()
 registerQqTools({
   ctx: { get: (n) => (n === 'tools' ? { register(d) { registered.set(d.name, d); return () => {} }, guard() { return () => {} } } : undefined) },

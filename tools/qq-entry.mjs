@@ -35,6 +35,7 @@ import { createLogger } from '../lib/core/log.js'
 import { classifyMessage, shouldRespond, isAmbiguousAsk, taskHint, CLASSIFY } from '../lib/qq/classify.js'
 import { assessSessionWork } from '../lib/conversation/pending.js'
 import { judgeAlive, probeTasks, LOOP_STALL_MS, EVENT_SILENCE_MS } from '../lib/qq/alive.js'
+import { fragmentOf } from '../lib/conversation/chat-memory.js'
 import { filePathFromToolCall, filesFromPresented, userMessageFromEvent } from '../lib/conversation/relay.js'
 
 const PORT = Number(process.env.ENTRY_PORT ?? 6700)
@@ -1871,10 +1872,16 @@ const v3Checks = []
 if (CONV) {
   // 这里沿用文件顶部那个通用的 `waitValue`（本块曾有一份本地副本，已删掉 ——
   // 两份同名的等待函数正是"改了一份、另一份还是老行为"的经典来源）。
-  const memoryFile = path.join(STATE_DIR, 'memory.json')
+  // 单独装 QQ 侧时统一记忆层建在状态目录下；这里把它换回 QQ 侧的“碎片”视图来断言
+  const memoryFile = path.join(STATE_DIR, 'memory', 'memory.json')
   const readMemoryFile = () => {
     try {
-      return JSON.parse(fs.readFileSync(memoryFile, 'utf8'))
+      const raw = JSON.parse(fs.readFileSync(memoryFile, 'utf8'))
+      const fragments = (raw.entries ?? [])
+        .filter((e) => e.scope.startsWith('chat:') && (e.status === 'active' || e.status === 'candidate'))
+        .sort((a, b) => (a.id < b.id ? -1 : 1))
+        .map((e) => fragmentOf(e, e.scope.slice('chat:'.length)))
+      return { ...raw, fragments }
     } catch {
       return null
     }
@@ -2383,7 +2390,7 @@ if (CONV) {
       c1Frags.length >= 1 && (mem1?.fragments ?? []).every((f) => /^(private|group):/.test(String(f.scope ?? ''))),
     ])
     v3Checks.push(['N5-c 碎片带 tag 对应的 importance（+2）', c1Frags.some((f) => f.importance === 2)])
-    v3Checks.push(['N5-d 碎片带 refs=1 与 id/hash', c1Frags.every((f) => f.refs >= 1 && /^f\d+$/.test(f.id) && /^[0-9a-f]{8}$/.test(f.hash))])
+    v3Checks.push(['N5-d 碎片带 refs≥1 与记忆层 id', c1Frags.every((f) => f.refs >= 1 && /^m\d{6}$/.test(f.id))])
     v3Checks.push(['N5-e 交接束已整份留档（handoff/ 目录）', Boolean(c1RecordAfter?.lastHandoff?.ledger) && fs.existsSync(String(c1RecordAfter.lastHandoff.ledger))])
     v3Checks.push([
       'N5-f 交接束里含 LLM 原始输出（可追溯"这次带了什么"）',
@@ -2474,7 +2481,7 @@ if (CONV) {
     await triggerHandoff({ id: recordNow2.rootSessionId }, { tokens: 55000 })
     const memMerged = readMemoryFile()
     const fragA = (memMerged?.fragments ?? []).find((f) => f.scope === `private:${C1}` && f.text === mergeA)
-    // 再喂一遍，其中一条指向另一条的 id：必须合并（不新增），并写 mergedFrom
+    // 再喂一遍，其中一条指向另一条的 id：必须合并（不新增），历史里留一条 merged
     const countBeforeMerge = (memMerged?.fragments ?? []).filter((f) => f.scope === `private:${C1}`).length
     queueLlm({ text: JSON.stringify({ handoff: { userGoal: '写论文', inFlight: [], constraints: [], preferences: [], promises: [], openQuestions: [], persona: '助手' }, fragments: [{ text: mergeB, kind: 'fact', tag: 1, mergeWith: fragA?.id ?? null }], drop: [] }) })
     const recordNow3 = (await fetchStatus())?.state?.chats?.[`private:${C1}`]
@@ -2485,8 +2492,8 @@ if (CONV) {
     const countAfterMerge = (memMerged2?.fragments ?? []).filter((f) => f.scope === `private:${C1}`).length
     v3Checks.push(['合并断言-a 两次喂入同一批近义碎片后碎片数没有翻倍', countAfterMerge <= countBeforeMerge + 1])
     v3Checks.push([
-      '合并断言-b 合并后保留了 mergedFrom 追溯信息',
-      (memMerged2?.fragments ?? []).some((f) => Array.isArray(f.mergedFrom) && f.mergedFrom.length > 0),
+      '合并断言-b 合并后历史里留了合并记录',
+      (memMerged2?.fragments ?? []).some((f) => f.merged > 0),
     ])
 
     // ══ N8. LLM 输出非法 JSON → 降级但交班仍然完成 ═════════════════════
@@ -2682,7 +2689,7 @@ if (CONV) {
       const after = await memTool.execute({ chat_type: 'private', chat_id: C1, limit: 50 }, OWNER_EXEC)
       v3Checks.push(['隐私-d 能删掉指定碎片', String(del?.changed ?? '').includes('已删除') && !(after?.fragments ?? []).some((f) => f.id === target.id)])
       // 跨会话越界删除必须被拒（碎片按 scope 隔离）。
-      const cross = await memTool.execute({ chat_type: 'private', chat_id: '29999', forget: 'f0001' }, OWNER_EXEC)
+      const cross = await memTool.execute({ chat_type: 'private', chat_id: '29999', forget: 'm000001' }, OWNER_EXEC)
       v3Checks.push(['隐私-e 不能删别的会话的碎片（scope 隔离）', String(cross?.changed ?? '').includes('没有删除')])
       const pinTarget = (after?.fragments ?? []).find((f) => !f.pinned)?.id
       const pin = pinTarget ? await memTool.execute({ chat_type: 'private', chat_id: C1, pin: pinTarget }, OWNER_EXEC) : null

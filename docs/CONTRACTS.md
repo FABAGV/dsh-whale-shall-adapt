@@ -115,6 +115,9 @@ memory.observe(input)
 //         → ≥ ask 新建并继承旧那条的计数（ask）→ 否则 new。
 //   origin 只有控制台、设置页和用户自己的写入能给 'user'，模型侧给了也记成 'model'。
 memory.judge(id, verdict, { actor, text?, boundary?, scope? })   // 用户裁决，见 4.6；actor 只能是 'console' | 'dsh-settings'
+//   例外 'qq-user'：用户在自己的 QQ 聊天里通过 shall_qq_memory 操作。只能动 chat:* 和 owner:chat，
+//   只能 pin / unpin / forget / quiet / unquiet；purge 只能删整个本聊天，不能屏蔽、不能按前缀。
+//   QQ 侧经 lib/conversation/chat-memory.js（ChatMemory）读写记忆层，不直接调这些接口。
 memory.list(query) / memory.get(id)                               // 返回拷贝
 memory.promptGuards(scope)       // → { rejected: [文本], boundaries: [文本] }，整家（4.5）一起算，给生成提示词用
 memory.select(scopes, budgetTokens, policy?)   // → { picked, usedTokens, total, revisions, key }
@@ -125,7 +128,7 @@ memory.retract(ids, { actor, reason })   // 生成器不再支持：转为 candi
 memory.demote(ids, { actor, reason })    // 重要度 −1
 memory.recordUsage(ids, event, meta?)    // injected（按 meta.key 去重）| recalled | corrected | seen
 memory.recall(query, scopes, limit?)     // active、candidate、historical 都能召回，historical 带 historical: true
-memory.age(scope, { gen, now? })         // 过期、衰减、清理、单范围上限；返回 { decayed, expired, dropped }
+memory.age(scope, { gen, now?, everyGens?, maxPerScope? })   // 过期、衰减、清理、单范围上限；返回 { decayed, expired, dropped }
 memory.purge(query, actor) / memory.unblock(scope, actor)   // “忘掉我”：删整个范围，可屏蔽之后的写入
 memory.export(query) / memory.revision(scope) / memory.onChange(listener) / memory.flush() / memory.dispose()
 ```

@@ -237,6 +237,28 @@ console.log('I. purge / export / 落盘')
   recovered.dispose()
 }
 
+console.log('I2. 聊天里的用户（qq-user）')
+{
+  const m = fresh('chat-user')
+  const U = { actor: 'qq-user' }
+  const own = m.observe({ scope: 'chat:private:5', kind: 'fact', text: '周五下午要去医院复查', actor: 'qq:handoff' }).id
+  const ownerWork = m.observe({ scope: 'owner:work', kind: 'avoid', text: '不要擅自改动配置文件', actor: 'profile' }).id
+  const added = m.observe({ scope: 'chat:private:5', kind: 'fact', text: '喜欢别人叫他老王', actor: 'qq-user', origin: 'user' })
+  check('qq-user 写入可以带 user 来源', m.get(added.id).origin === 'user')
+  check('qq-user 能钉住本聊天的记忆', m.judge(own, 'pin', U).ok && m.get(own).pinned)
+  check('qq-user 不能判“不对”', m.judge(own, 'wrong', U).ok === false && m.get(own).status === 'active')
+  check('qq-user 动不了主人的干活记忆', m.judge(ownerWork, 'forget', U).ok === false && Boolean(m.get(ownerWork)))
+  check('qq-user 能忘掉本聊天的一条', m.judge(own, 'forget', U).ok && !m.get(own))
+  check('qq-user 不能屏蔽、不能按前缀删', throws(() => m.purge({ scope: 'chat:private:5', block: true }, 'qq-user'))
+    && throws(() => m.purge({ scopePrefix: 'chat:' }, 'qq-user')) && throws(() => m.purge({ scope: 'owner:work' }, 'qq-user')))
+  check('qq-user 能清空本聊天', m.purge({ scope: 'chat:private:5' }, 'qq-user') === 1 && m.list({ scope: 'chat:private:5' }).length === 0)
+  const aged = fresh('chat-user-age')
+  for (let i = 0; i < 4; i += 1) aged.observe({ scope: 'chat:group:9', kind: 'fact', text: `完全不同的第${i}件事${'甲乙丙丁'[i].repeat(6)}`, actor: 'qq:handoff' })
+  check('age 可以按次覆盖上限', aged.age('chat:group:9', { gen: 1, maxPerScope: 2 }).dropped === 2 && aged.list({ scope: 'chat:group:9' }).length === 2)
+  m.dispose()
+  aged.dispose()
+}
+
 console.log('J. 文本工具')
 check('换个说法的中文句子相似度高于无关句子', jaccard('还差参考文献', '参考文献还没弄') > jaccard('还差参考文献', '今天天气不错'))
 
