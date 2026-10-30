@@ -1,16 +1,15 @@
 /**
  * 界面半边：6 个区块 + 每条的「置顶 / 封印 / 删除」按钮 + 折叠区的渲染与点击链路。
  *
- * 为什么单独一个文件：`tools/calibrate.mjs` 的夹具里**没有** `entryMarks` / `injectedIds`
- * 字段（那是"老宿主 / 预览数据"的形状），所以本插件新增的那几个区块在那边
- * **一条都不会被渲染到** —— 路径没被走过就等于没测过。这里补上：
+ * 界面里“置顶 / 封印 / 删除”那几个区块依赖 `entryMarks` / `injectedIds` 字段，
+ * 老宿主和预览数据里没有它们，不用专门的夹具就渲染不到 —— 路径没被走过就等于没测过：
  *
  *   1. 6 个区块的**顺序**与默认折叠态（①②③ 常显；④⑤⑥ 是 `details`，默认收起）
  *   2. 每个区块的条目与按钮（含"置顶到顶时按钮禁用并给出原因"）
  *   3. **点击链路**：按钮 → 宿主的 `/entry/*` 路由（不是只改本地状态）
  *
- * 打桩方式与 `tools/calibrate.mjs` 同源（window.__ModuleLoader__ / document /
- * fetch / localStorage / navigator + 迷你 React），但它**不是** React 渲染器：
+ * 打桩的是 window.__ModuleLoader__ / document / fetch / localStorage / navigator，外加一个迷你 React；
+ * 它**不是** React 渲染器：
  * 没有 react-dom，布局与真实事件系统都没被验证。
  *
  * 运行：node test/client-marks-render.mjs
@@ -85,7 +84,6 @@ const HOST_STATE = {
 	customText: '',
 	autoExtraText: '',
 	maxPinned: 10,
-	hallUrl: '',
 	profile: {
 		version: 7,
 		generatedAt: 1760000000000,
@@ -183,6 +181,7 @@ const fetchStub = async (url, init) => {
 	calls.push({ url, method, body })
 	if (url.endsWith('/state')) return jsonResponse(apiState)
 	if (/\/entry\/(pin|unpin|seal|unseal|delete)$/.test(url)) return jsonResponse({ ok: true, state: apiState })
+	if (url.endsWith('/copied')) return jsonResponse({ ok: true })
 	return jsonResponse({ ok: false, error: 'not found' }, 404)
 }
 
@@ -321,7 +320,7 @@ const ctx = {
 }
 
 // ===========================================================================
-// 元素树工具（与 tools/calibrate.mjs 同源）
+// 元素树工具
 // ===========================================================================
 function collectElements(node, out) {
 	const list = out || []
@@ -688,6 +687,57 @@ console.log('='.repeat(72))
 	tree = mini.render(registered.component, props)
 	text = treeText(tree)
 	check('老宿主没有 trigger 时首跑块整块不显示', !text.includes('第一次使用：画像还没生成'))
+}
+
+console.log('')
+console.log('='.repeat(72))
+console.log('8. “复制之后改了几处”由宿主算好，界面只显示')
+console.log('='.repeat(72))
+{
+	const base = entry('m000001', 'A', CLAIM_A)
+	apiState = JSON.parse(JSON.stringify(HOST_STATE))
+	apiState.revision = {
+		status: 'dirty',
+		count: 3,
+		added: [entry('m000004', 'A', '新增的一条')],
+		removed: [entry('m000003', 'C', '被删掉的一条')],
+		modified: [{ before: base, after: { ...base, claim: '改写之后的正文' } }],
+		baselineAt: 1760000000000,
+		baselineProfileVersion: 5,
+	}
+	await face.actions.refresh()
+	tree = mini.render(registered.component, props)
+	text = treeText(tree)
+	check('有修订时标题带处数', text.includes(translate('shall', 'revHeadingDirty', { n: 3 })))
+	check('明细列出新增、删除、改写后的正文',
+		text.includes('新增的一条') && text.includes('被删掉的一条') && text.includes('改写之后的正文'))
+	check('基线的版本号可见', text.includes(translate('shall', 'revBaselineVersion', { v: 5 })))
+
+	apiState.revision = { status: 'clean', count: 0, added: [], removed: [], modified: [], baselineAt: 1, baselineProfileVersion: 5 }
+	await face.actions.refresh()
+	text = treeText(mini.render(registered.component, props))
+	check('没变时显示“与你上次复制时一致”', text.includes(translate('shall', 'revHeadingClean')))
+
+	for (const [status, key] of [['no-baseline', 'revHeadingUnknown'], ['stale-baseline', 'revHeadingStale']]) {
+		apiState.revision = { status, count: 0, added: [], removed: [], modified: [] }
+		await face.actions.refresh()
+		text = treeText(mini.render(registered.component, props))
+		check(`${status}：显示对应的标题`, text.includes(translate('shall', key)))
+	}
+
+	delete apiState.revision
+	await face.actions.refresh()
+	text = treeText(mini.render(registered.component, props))
+	check('老宿主没有 revision 字段：不显示修订提示，也不报错', !text.includes('处修订') && !text.includes(translate('shall', 'revHeadingClean')))
+
+	const before = calls.length
+	await face.actions.markCopied('复制出去的画像文本')
+	const posted = calls.slice(before).find(call => call.url.endsWith('/copied'))
+	check('复制只把文本告诉宿主，基线条目由宿主自己存',
+		posted?.method === 'POST' && posted.body?.text === '复制出去的画像文本' && !('entries' in posted.body) && !('algorithmVersion' in posted.body),
+		JSON.stringify(posted?.body))
+	check('复制之后重新拉了一次状态', calls.slice(before).some(call => call.url.endsWith('/state')))
+	check('不再往 localStorage 写本地基线', [...storage.keys()].every(key => !key.includes('copied')))
 }
 
 console.log('')

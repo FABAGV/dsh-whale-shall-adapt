@@ -52,11 +52,7 @@ const mod = await import('../lib/adapt/plugin.js')
     `typeof=${typeof plugin.Config}`)
   check('命名导出 Config 与 default.Config 是同一个对象', mod.Config === plugin.Config)
   check('Config 暴露 Standard Schema 接口', typeof plugin.Config['~standard']?.validate === 'function')
-  check('导出模式 3 的外链常量', typeof mod.PROMPT_HALL_URL === 'string')
   // 用户还没给真实地址，所以现在是空串 = 未配置。
-  // 语义要求：未配置时界面不显示死链（由 /state 的 hallUrl === null 保证）。
-  check('大厅链接当前是空串（未配置 → 界面不显示入口）', mod.PROMPT_HALL_URL === '',
-    JSON.stringify(mod.PROMPT_HALL_URL))
   check('导出 HTTP 前缀常量给客户端半边对齐', typeof mod.API_PREFIX === 'string' && mod.API_PREFIX.startsWith('/'))
 }
 
@@ -148,8 +144,6 @@ console.log('='.repeat(72))
   check('服务自带 validate() 自检', typeof service?.validate === 'function' && service.validate() === true)
   check('getState() 标出 effectiveSource', ['customText', 'profile'].includes(service.getState().effectiveSource),
     String(service.getState().effectiveSource))
-  check('getPromptHallUrl() 返回空串（未配置）', service.getPromptHallUrl() === '')
-  check('isPromptHallConfigured() 为 false', service.isPromptHallConfigured() === false)
 
   // 初始：没有任何画像/自定义文本 → 段文本为空串（空段会被宿主丢掉，不产生 system 节点）
   check('空状态时系统提示段为空串', section.text({}) === '')

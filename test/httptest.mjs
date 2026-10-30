@@ -132,8 +132,6 @@ try {
         Number.isFinite(json.trigger.triggerNewSessions) &&
         typeof json.trigger.scanned === 'boolean',
       JSON.stringify(json.trigger))
-    check('未配置大厅链接时 hallUrl 是 null（界面不显示死链）', json.hallUrl === null,
-      JSON.stringify(json.hallUrl))
     check('GET /state 不泄漏任何密钥字段',
       !/(apiKey|api_key|token|secret|password)/i.test(JSON.stringify(json)))
   }

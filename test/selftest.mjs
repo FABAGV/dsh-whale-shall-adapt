@@ -31,7 +31,6 @@ import {
   generateProfile,
 } from '../lib/adapt/profile.js'
 import { StateStore, MODE, emptyState } from '../lib/adapt/state.js'
-import { PROMPT_HALL_URL } from '../lib/adapt/hall.js'
 import { resolveConfig } from '../lib/adapt/plugin.js'
 
 const DSH_HOME = process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
@@ -979,7 +978,7 @@ console.log('='.repeat(72))
 
 console.log('')
 console.log('='.repeat(72))
-console.log('13. 只读保证 + 模式 3 的边界')
+console.log('13. 只读保证 + 宿主侧不发出站请求')
 console.log('='.repeat(72))
 {
   const stripCommentLines = (text) => text.split('\n').filter(line => !/^\s*(\/\/|\*|\/\*)/.test(line)).join('\n')
@@ -1044,12 +1043,12 @@ console.log('='.repeat(72))
     !new RegExp(`sessionsRoot[^\\n]{0,120}${writeCalls.source}`).test(sessionsSrc))
 
   /**
-   * 模式 3（提示词大厅）的边界证明：宿主侧**完全不发网络请求**。
+   * 边界证明：宿主侧**完全不发网络请求**。
    * 光靠"我没写 fetch"不算证明，所以静态扫一遍宿主侧的每个文件。
    * `lib/client.js` 是 UI 代理的文件（它会 fetch 自己的后端接口），显式排除。
    */
   const HOST_FILES = ['index.js', 'adapt/plugin.js', 'adapt/schema.legacy.js', 'adapt/frames.js', 'adapt/sessions.js',
-                      'adapt/signals.js', 'adapt/profile.js', 'adapt/state.js', 'adapt/hall.js', 'ui/http.js',
+                      'adapt/signals.js', 'adapt/profile.js', 'adapt/state.js', 'ui/http.js',
                       'privacy/policy.js', 'core/llm.js', 'core/jobs.js', 'adapt/qq-corpus.js', 'adapt/persona.js',
                       'adapt/skills.js', 'core/redact.js', 'adapt/workbench.js', 'ui/console-api.js']
     .filter(file => fs.existsSync(path.join(libDir, file)))
@@ -1069,19 +1068,9 @@ console.log('='.repeat(72))
       }
     })
   }
-  check('宿主侧不发任何出站网络请求（模式 3 确实"不抓取"）',
+  check('宿主侧不发任何出站网络请求',
     networkOffenders.length === 0,
     networkOffenders.length ? networkOffenders.join(', ') : `扫了 ${HOST_FILES.length} 个宿主侧文件`)
-
-  const stripComments = (text) => text.replace(/^\s*(\/\/|\*|\/\*).*$/gm, '')
-  const hall = fs.readFileSync(path.join(libDir, 'adapt', 'hall.js'), 'utf8')
-  check('hall.js 里没有缓存结构（模式 3 确实"不缓存"）',
-    !/\bMap\b|\bSet\b|cache/i.test(stripComments(hall)))
-  check('hall.js 里没有凭据读取（模式 3 确实"不鉴权"）',
-    !/credential|token|apiKey|Authorization/i.test(stripComments(hall)))
-  check('hall.js 的默认值是空串（未配置 → 界面不显示死链）',
-    /PROMPT_HALL_URL\s*=\s*''/.test(hall))
-  check('导出的 PROMPT_HALL_URL 与 hall.js 一致（未配置）', PROMPT_HALL_URL === '')
 
   // ── 运行时副作用：扫描不得改动会话日志 ────────────────────────────
   //
