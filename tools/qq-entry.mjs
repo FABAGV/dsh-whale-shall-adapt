@@ -60,6 +60,8 @@ const STATE_DIR = process.env.ENTRY_STATE_DIR ?? path.join(os.tmpdir(), `dsh-wha
  *     同一条断言在两趟里都必须绿 */
 // v2 回滚路径已删除：只剩常驻对接会话这一条路，下面的 `CONV` 恒为 true。
 const CONV = true
+// 工具在宿主里总带着调用方会话；这里模拟“你自己在 DSH 里的会话”（不属于任何 QQ 聊天，不受聊天范围限制）。
+const OWNER_EXEC = { agent: { session: { header: { id: 'owner-entry-test', cwd: 'D:\owner' } } } }
 
 const log = createLogger('entry-test', 'info')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -1534,7 +1536,7 @@ if (sendTool) {
   try {
     const out = await sendTool.execute(
       { chat_type: 'private', chat_id: '20002', text: '这是 agent 主动发出的消息' },
-      {},
+      OWNER_EXEC,
     )
     toolChecks.push(['shall_qq_send 执行成功', out?.delivered === true])
     toolChecks.push(['shall_qq_send 输出可渲染', Array.isArray(sendTool.output?.render({}, out))])
@@ -1543,17 +1545,17 @@ if (sendTool) {
   }
 }
 if (listTool) {
-  const out = await listTool.execute({}, {})
+  const out = await listTool.execute({}, OWNER_EXEC)
   toolChecks.push(['shall_qq_chats 列出已接入会话', (out?.chats ?? []).length >= 2])
   toolChecks.push(['输出里有工作区路径', (out?.chats ?? []).every((c) => Boolean(c.workspacePath))])
 }
 if (histTool) {
-  const out = await histTool.execute({}, {})
+  const out = await histTool.execute({}, OWNER_EXEC)
   toolChecks.push(['shall_qq_history 能查到语料', (out?.count ?? 0) > 0])
   toolChecks.push(['shall_qq_history 输出可渲染', Array.isArray(histTool.output?.render({}, out))])
 }
 if (tasksTool) {
-  const out = await tasksTool.execute({}, {})
+  const out = await tasksTool.execute({}, OWNER_EXEC)
   // ⚠️ `conversation.enabled=true` 下 mock 阶段的任务消息先进常驻会话，
   //    不会产生任何任务记录（派活得靠模型调 shall_qq_dispatch，而假 DSH 里没有模型）。
   //    所以这里分两种判据：v2 下必须有**非空**记录；v3 下必须是**空但调用成功**。
@@ -1692,7 +1694,7 @@ async function fetchStatus() {
 /** 通过 shall_qq_tasks 工具读台账（这正是常驻会话能看到的视角） */
 async function listTasksOf(chatType, chatId, limit = 20) {
   if (!tasksTool) return []
-  const out = await tasksTool.execute({ chat_type: chatType, chat_id: chatId, limit }, {})
+  const out = await tasksTool.execute({ chat_type: chatType, chat_id: chatId, limit }, OWNER_EXEC)
   return out?.tasks ?? []
 }
 
@@ -2076,7 +2078,7 @@ if (CONV) {
     const aliveTool = registeredTools.get('shall_qq_alive')
     v3Checks.push(['存活-a shall_qq_alive 已注册', Boolean(aliveTool)])
     if (aliveTool) {
-      const out = await aliveTool.execute({}, {})
+      const out = await aliveTool.execute({}, OWNER_EXEC)
       const st = await fetchStatus()
       v3Checks.push(['存活-b 当前连着 mock/受控客户端 → 工具报 alive=true', out?.alive === true])
       v3Checks.push([
@@ -2090,7 +2092,7 @@ if (CONV) {
       v3Checks.push(['存活-e 工具输出可渲染', Array.isArray(aliveTool.output?.render({}, out))])
     }
     {
-      const tk = await tasksTool.execute({}, {})
+      const tk = await tasksTool.execute({}, OWNER_EXEC)
       v3Checks.push([
         '存活-f shall_qq_tasks 的输出里也带存活判定（问进度时第一眼就能看到"它还在不在"）',
         tk?.alive?.alive === true && String(tk?.alive?.because ?? '').length > 0,
@@ -2700,19 +2702,19 @@ if (CONV) {
     const memTool = registeredTools.get('shall_qq_memory')
     v3Checks.push(['隐私-a shall_qq_memory 已注册（用户可查可删）', Boolean(memTool)])
     if (memTool) {
-      const listed = await memTool.execute({ chat_type: 'private', chat_id: C1, limit: 50 }, {})
+      const listed = await memTool.execute({ chat_type: 'private', chat_id: C1, limit: 50 }, OWNER_EXEC)
       v3Checks.push(['隐私-b 能列出本会话的碎片', (listed?.fragments ?? []).length > 0 && listed?.scope === `private:${C1}`])
       v3Checks.push(['隐私-c 返回了落盘文件位置（用户知道数据在哪）', String(listed?.file ?? '').endsWith('memory.json')])
       const target = listed.fragments[listed.fragments.length - 1]
-      const del = await memTool.execute({ chat_type: 'private', chat_id: C1, forget: target.id }, {})
-      const after = await memTool.execute({ chat_type: 'private', chat_id: C1, limit: 50 }, {})
+      const del = await memTool.execute({ chat_type: 'private', chat_id: C1, forget: target.id }, OWNER_EXEC)
+      const after = await memTool.execute({ chat_type: 'private', chat_id: C1, limit: 50 }, OWNER_EXEC)
       v3Checks.push(['隐私-d 能删掉指定碎片', String(del?.changed ?? '').includes('已删除') && !(after?.fragments ?? []).some((f) => f.id === target.id)])
       // 跨会话越界删除必须被拒（碎片按 scope 隔离）。
-      const cross = await memTool.execute({ chat_type: 'private', chat_id: '29999', forget: 'f0001' }, {})
+      const cross = await memTool.execute({ chat_type: 'private', chat_id: '29999', forget: 'f0001' }, OWNER_EXEC)
       v3Checks.push(['隐私-e 不能删别的会话的碎片（scope 隔离）', String(cross?.changed ?? '').includes('没有删除')])
       const pinTarget = (after?.fragments ?? []).find((f) => !f.pinned)?.id
-      const pin = pinTarget ? await memTool.execute({ chat_type: 'private', chat_id: C1, pin: pinTarget }, {}) : null
-      const pinned = await memTool.execute({ chat_type: 'private', chat_id: C1, limit: 50 }, {})
+      const pin = pinTarget ? await memTool.execute({ chat_type: 'private', chat_id: C1, pin: pinTarget }, OWNER_EXEC) : null
+      const pinned = await memTool.execute({ chat_type: 'private', chat_id: C1, limit: 50 }, OWNER_EXEC)
       v3Checks.push([
         '隐私-f 能钉住一条（钉住的永不被淘汰）',
         Boolean(pinTarget) && String(pin?.changed ?? '').includes('已钉住') && (pinned?.fragments ?? []).some((f) => f.pinned),
@@ -3119,7 +3121,7 @@ const offlineChecks = []
       'N14-k 断开后发消息会明确报错（不会静默成功，也不会静默丢）',
       await (async () => {
         try {
-          await sendTool.execute({ chat_type: 'private', chat_id: '20999', text: '断开之后这条不该发出去' }, {})
+          await sendTool.execute({ chat_type: 'private', chat_id: '20999', text: '断开之后这条不该发出去' }, OWNER_EXEC)
           return false
         } catch (err) {
           // 两种失败都算合格：`pick()` 选不到（连接已被摘掉）→ "当前没有可用的 OneBot 连接"；
@@ -3137,7 +3139,7 @@ const offlineChecks = []
     // 工具侧必须与端点**同源**：模型拿到的也是"离线"，否则它会替插件编一句"在的"
     const aliveTool2 = registeredTools.get('shall_qq_alive')
     if (aliveTool2) {
-      const out = await aliveTool2.execute({}, {})
+      const out = await aliveTool2.execute({}, OWNER_EXEC)
       offlineChecks.push(['N14-f shall_qq_alive 断开后同样报 alive=false（工具与端点不会分裂）', out?.alive === false])
       offlineChecks.push([
         'N14-g shall_qq_alive 在离线时给出了具体依据（reasons 非空）',
@@ -3145,7 +3147,7 @@ const offlineChecks = []
       ])
       offlineChecks.push(['N14-h 离线时的渲染明确写「不活着」', String(aliveTool2.output?.render({}, out)?.[0]?.text ?? '').includes('不活着')])
     }
-    const tk2 = await tasksTool.execute({}, {})
+    const tk2 = await tasksTool.execute({}, OWNER_EXEC)
     offlineChecks.push(['N14-i shall_qq_tasks 也带上了离线判定（问进度时先被拦住）', tk2?.alive?.alive === false])
   } catch (err) {
     offlineChecks.push([`N14 断开实测抛错: ${err.stack ?? err.message}`, false])
