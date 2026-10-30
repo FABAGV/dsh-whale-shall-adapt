@@ -36,6 +36,7 @@ import { classifyMessage, shouldRespond, isAmbiguousAsk, taskHint, CLASSIFY } fr
 import { assessSessionWork } from '../lib/conversation/pending.js'
 import { judgeAlive, LOOP_STALL_MS, EVENT_SILENCE_MS } from '../lib/qq/alive.js'
 import { fragmentOf } from '../lib/conversation/chat-memory.js'
+import { createGroupSettings } from '../lib/group/settings.js'
 import { filePathFromToolCall, filesFromPresented, userMessageFromEvent } from '../lib/conversation/relay.js'
 
 const PORT = Number(process.env.ENTRY_PORT ?? 6700)
@@ -245,6 +246,12 @@ function releaseAllHeld(reason = { kind: 'completed' }) {
  *   于是 `turnEnds = {kind:'blocked'}; return false`（`:906`、`:958-961`）。
  *   结果是：**注入的上下文与用户的这句话一起被吞掉**，且什么都不抛。
  *   fake 如果不复刻这一条，"往已退役会话投递"就退化成一次无害操作。 */
+/** 下一个回合的 assistant 正文按这个队列出（用来脚本化模型的回复，如 <refuse/>、带备忘的回复）；队列空了用默认那句 */
+const scriptedReplies = []
+function queueReply(text) {
+  scriptedReplies.push(text)
+}
+
 function simulateTurn(sessionId) {
   const rec = liveSessions.get(sessionId)
   const session = rec?.session ?? { id: sessionId }
@@ -316,6 +323,7 @@ function simulateTurn(sessionId) {
     }
     if (rec) rec.claimedThisTurn = []
   }, 60)
+  const scriptedText = scriptedReplies.shift()
   setTimeout(() => send('tool/call', { turn, step: 1, callId: 'c1', name: 'read', arguments: '{}' }), 140)
   setTimeout(() => send('tool/call', { turn, step: 1, callId: 'c2', name: 'write', arguments: '{}' }), 200)
   setTimeout(
@@ -325,7 +333,7 @@ function simulateTurn(sessionId) {
         step: 1,
         message: {
           role: 'assistant',
-          content: [{ type: 'text', text: '我已经按你的要求建好了项目，README 写在项目根目录' }],
+          content: [{ type: 'text', text: scriptedText ?? '我已经按你的要求建好了项目，README 写在项目根目录' }],
         },
         stream: [],
       }),
@@ -1201,14 +1209,15 @@ log.info(`状态目录（本次运行专用）：${STATE_DIR}`)
 
 const { createQqStatus } = await import('../lib/index.js')
 const qqStatus = createQqStatus()
+// 控制台里按群改的运行时设置（档位……）；测试直接写它
+const groupSettings = createGroupSettings({ dir: STATE_DIR })
 mod.default.apply(root, {
   logLevel: 'debug',
   connection: { mount: 'own', host: '127.0.0.1', reversePort: PORT, token: '' },
   tasks: { workspaceRoot: WORKSPACE_ROOT },
-  participation: { groupMode: 'mention' },
   scope: { groups: ['*'], friends: ['*'], blockedGroups: ['99999'] },
   advanced: { stateDir: STATE_DIR },
-}, { qqStatus })
+}, { qqStatus, groupSettings })
 
 await sleep(1000)
 
@@ -1330,8 +1339,9 @@ try {
     shouldRespond({ chatType: 'group', atBot: true, groupMode: 'silent' }).respond === false,
   ])
   classifyChecks.push([
-    '寻址门：群聊 active 模式下不 @ 也响应',
-    shouldRespond({ chatType: 'group', atBot: false, groupMode: 'active' }).respond === true,
+    '寻址门：群聊 active 模式下没有决策引擎时也只在被叫到时响应（active 的判断在 lib/group/engine.js）',
+    shouldRespond({ chatType: 'group', atBot: false, groupMode: 'active' }).respond === false &&
+      shouldRespond({ chatType: 'group', atBot: true, groupMode: 'active' }).respond === true,
   ])
   classifyChecks.push([
     '寻址门：私聊 privateMode=always 才响应',
@@ -2119,6 +2129,101 @@ if (CONV) {
         '硬约束②：常驻会话的正文带发言人标注（群聊）',
         Boolean((await waitValue(() => promptsFor(silentSession.id)[0]))?.text?.includes('来自 QQ 群')),
       ])
+    }
+
+    // ══ G1–G7. 群聊决策接线：背景、标注、引用回复、合并、沉默、备忘 ═════════
+    //
+    // 点名档（默认）下没 @ 的群消息只入库；被 @ 时把它们作为“群里刚才在聊”的背景一起带上，
+    // 回复默认引用触发它的那条消息；模型可以用 <refuse/> 这轮不说话，回合末尾的内部备忘不发到 QQ、待续存进记忆。
+    {
+      const GG = '30031'
+      const gDir = dirOf('group', GG)
+      const groupOut = () => client.outbound.filter((o) => o.chatType === 'group' && o.chatId === GG)
+      await client.sendGroup(GG, '周末想去爬山有人一起吗', { atBot: false })
+      await sleep(300)
+      await client.sendGroup(GG, '我也想去，就是怕下雨', { atBot: false })
+      await sleep(300)
+      v3Checks.push(['G1 点名档下没 @ 的群消息不建会话', sessionsIn(gDir).length === 0])
+      queueReply('我觉得可以看看天气预报再定')
+      await client.sendGroup(GG, '你怎么看', { atBot: true })
+      const gSession = await waitValue(() => sessionsIn(gDir)[0])
+      const gPrompt = await waitValue(() => promptsFor(gSession?.id ?? '').find((p) => p.text.includes('你怎么看')))
+      v3Checks.push([
+        'G2 被 @ 时带上群里刚才的几条作背景（只作背景）',
+        Boolean(gPrompt) && gPrompt.text.includes('【群里刚才在聊') && gPrompt.text.includes('周末想去爬山') && gPrompt.text.includes('怕下雨'),
+      ])
+      v3Checks.push([
+        'G3 群消息的来源标注里有发言人 QQ 号和消息号（模型要 @ / 引用时只能用这里给的号）',
+        Boolean(gPrompt) && /发言人 [^\n]*（QQ 30031，消息号 \d+）\]/.test(gPrompt.text),
+      ])
+      const firstReply = await waitValue(() => groupOut()[0], 12000, 150)
+      v3Checks.push([
+        'G4 群里回复默认引用触发它的那条消息，正文里没有标签和备忘',
+        Boolean(firstReply) && firstReply.text.startsWith('[reply]') && firstReply.text.includes('我觉得可以看看天气预报再定') && !firstReply.text.includes('【备忘】'),
+      ])
+      await waitIdle(gSession?.id ?? '')
+
+      // 合并：同一个人连发两句，只交给会话一条
+      const promptsBefore = promptsFor(gSession?.id ?? '').length
+      await client.sendGroup(GG, '第一句：明天如果不下雨', { atBot: true })
+      await client.sendGroup(GG, '第二句：我们就出发', { atBot: true })
+      const merged = await waitValue(() => promptsFor(gSession?.id ?? '').slice(promptsBefore).find((p) => p.text.includes('第二句')), 8000, 150)
+      const newPrompts = promptsFor(gSession?.id ?? '').slice(promptsBefore)
+      v3Checks.push([
+        'G5 同一个人连发的两句合并成一条交给会话',
+        Boolean(merged) && merged.text.includes('第一句') && merged.text.includes('第二句') && newPrompts.length === 1,
+      ])
+      await waitIdle(gSession?.id ?? '')
+
+      // 沉默：模型回 <refuse/>，什么都不发到 QQ，也不补“这一轮结束了”
+      const silentBefore = (await fetchStatus())?.relay?.silentTurns ?? 0
+      const outBeforeRefuse = groupOut().length
+      queueReply('<refuse/>\n【备忘】\n【目的】这句不是对我说的\n【状态】跳过')
+      await client.sendGroup(GG, '随便说一句', { atBot: true })
+      const silentAfter = await waitValue(async () => {
+        const n = (await fetchStatus())?.relay?.silentTurns ?? 0
+        return n > silentBefore ? n : 0
+      }, 12000, 150)
+      await sleep(1500)
+      v3Checks.push(['G6 模型回 <refuse/>：群里什么都不发', Boolean(silentAfter) && groupOut().length === outBeforeRefuse])
+      await waitIdle(gSession?.id ?? '')
+
+      // 备忘：待续存进记忆，备忘本身不发到 QQ
+      const outBeforeMemo = groupOut().length
+      queueReply('好，周五我来问集合时间。\n【备忘】\n【目的】约周末爬山\n【状态】待续\n【待续】周五问他爬山的集合时间')
+      await client.sendGroup(GG, '那就这么定了', { atBot: true })
+      const memoReply = await waitValue(() => groupOut()[outBeforeMemo], 12000, 150)
+      v3Checks.push([
+        'G7a 带备忘的回复：发到 QQ 的只有正文',
+        Boolean(memoReply) && memoReply.text.includes('周五我来问集合时间') && !memoReply.text.includes('备忘') && !memoReply.text.includes('待续'),
+      ])
+      const memoEntry = await waitValue(() => readMemoryFile()?.entries?.find((e) => e.scope === `chat:group:${GG}` && e.text === '待续：周五问他爬山的集合时间'), 6000, 150)
+      v3Checks.push(['G7b 备忘里的“待续”存进了该群的记忆（意图、模型来源、有过期时间）', Boolean(memoEntry) && memoEntry.kind === 'intent' && memoEntry.origin === 'model' && Number(memoEntry.validUntil) > Date.now()])
+      await waitIdle(gSession?.id ?? '')
+    }
+
+    // ══ G8. 在场档：点名之后被回复过的人接着说，不用再 @ ═══════════════════
+    //
+    // 这个群在控制台里（运行时设置）被设成“在场”档，等时机缩短到 0.3 秒。
+    {
+      const PG = '30041'
+      groupSettings.setSettings(PG, { mode: 'present', timing: { quietMs: 300, maxWaitMs: 2000 }, budget: { cooldownMs: 0 } })
+      const pDir = dirOf('group', PG)
+      await client.sendGroup(PG, '帮我查个东西', { atBot: true })
+      const pSession = await waitValue(() => sessionsIn(pDir)[0])
+      await waitIdle(pSession?.id ?? '')
+      const before = promptsFor(pSession?.id ?? '').length
+      await client.sendGroup(PG, '那另一个呢', { atBot: false })
+      const follow = await waitValue(() => promptsFor(pSession?.id ?? '').slice(before).find((p) => p.text.includes('那另一个呢')), 8000, 150)
+      v3Checks.push([
+        'G8a 在场档：点名之后被回复过的人不 @ 也能接着说，提示里说明“是插件觉得你可以接话”',
+        Boolean(follow) && follow.text.includes('插件提示：这条没有人叫你') && follow.text.includes('<refuse/>'),
+      ])
+      await waitIdle(pSession?.id ?? '')
+      const afterFollow = promptsFor(pSession?.id ?? '').length
+      await client.sendGroup(PG, '好的谢谢', { atBot: false })
+      await sleep(1800)
+      v3Checks.push(['G8b 对方像是在收尾（附和/道谢）：这轮不再接话', promptsFor(pSession?.id ?? '').length === afterFollow])
     }
 
     // ══ N13. 回传带上"它动了什么"，且**不带**工具调用次数 ══════════════

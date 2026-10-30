@@ -62,11 +62,12 @@ console.log('B. 合并后的 Config')
   check('画像侧传入值送达', v.signals?.longToolMs === 12345)
   check('画像侧默认值齐全', v.signals?.repeatFailMin === 3 && v.scan?.intervalMs === 120000)
   check('qq 子树传入值送达', v.qq?.connection?.reversePort === 7777)
-  check('qq 子树默认值齐全', v.qq?.connection?.host === '127.0.0.1' && v.qq?.participation?.groupMode === 'mention')
+  check('qq 子树默认值齐全', v.qq?.connection?.host === '127.0.0.1' && v.group?.defaultMode === 'mention' && v.group?.judge?.model === 'deepseek-flash' && v.qq?.participation?.mergeMs === 1200)
   check('logLevel 只在顶层出现一次', 'logLevel' in v && !('logLevel' in (v.qq ?? {})))
   const parts = mod.splitConfig(v)
   check('splitConfig：画像侧拿不到 qq 子树', !('qq' in parts.adapt))
   check('splitConfig：QQ 侧拿到顶层 logLevel', parts.qq.logLevel === v.logLevel && parts.qq.connection?.reversePort === 7777)
+  check('splitConfig：group 配置交给 QQ 侧，画像侧拿不到', parts.qq.group?.defaultMode === 'mention' && !('group' in parts.adapt))
 }
 
 console.log('C. 装载')

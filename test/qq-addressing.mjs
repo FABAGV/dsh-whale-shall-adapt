@@ -30,8 +30,8 @@ const poke = (extra = {}) => ({
   user_id: 5, group_id: 123, time: Math.floor(Date.now() / 1000), ...extra,
 })
 
-const make = (participation = {}) => new Pipeline({
-  config: resolveConfig({ scope: { groups: ['*'], friends: ['*'] }, participation: { aliases: ['小鲸', '123:阿鲸'], ...participation } }),
+const make = (participation = {}, group = {}) => new Pipeline({
+  config: resolveConfig({ scope: { groups: ['*'], friends: ['*'] }, participation: { aliases: ['小鲸', '123:阿鲸'], ...participation }, group }),
   log,
 })
 
@@ -55,7 +55,7 @@ console.log('A. 点名的几种叫法')
   check('回复别人的消息：不算点名', replyOther.intent === INTENT.INGEST)
   const late = p.decide(replyOther.message, { replyToBot: true })
   check('插件查到引用的是 bot 的旧消息后重判：回应', late.intent === INTENT.CHAT && late.addressedBy === 'reply')
-  const silent = make({ groupMode: 'silent' }).handle(groupMsg(123, [text('小鲸你好')]), conn)
+  const silent = make({}, { defaultMode: 'silent' }).handle(groupMsg(123, [text('小鲸你好')]), conn)
   check('silent 档叫名字也不回应', silent.intent === INTENT.INGEST)
 }
 
