@@ -149,9 +149,9 @@ console.log('E. QQ 语料')
 console.log('F. 技能：候选校验与落库')
 const skills = new SkillStore({ dir: path.join(tmp, 'skills') })
 {
-  const good = { name: 'Learned-Fix-PowerShell', description: '修 PowerShell 中文乱码', body: '## 步骤\n用 Node 读写文件，不要用 Get-Content 往返中文。验证：git diff 没有乱码。', scores: { reusable: 5, verified: 4, specific: 4, safe: 5 } }
+  const good = { name: 'Shall-Fix-PowerShell', description: '修 PowerShell 中文乱码', body: '## 步骤\n用 Node 读写文件，不要用 Get-Content 往返中文。验证：git diff 没有乱码。', scores: { reusable: 5, verified: 4, specific: 4, safe: 5 } }
   const checked = checkProposal(good)
-  check('名字转小写并去掉 learned- 前缀', checked.ok && checked.value.name === 'fix-powershell')
+  check('名字转小写并去掉 shall- 前缀', checked.ok && checked.value.name === 'fix-powershell')
   check('名字不合规被拒', checkProposal({ ...good, name: 'fix powershell!' }).ok === false)
   check('正文太短被拒', checkProposal({ ...good, body: '太短' }).ok === false)
   check('分数限制在 1 到 5', checkProposal({ ...good, scores: { reusable: 9, verified: -1 } }).value.scores.reusable === 5 &&
@@ -189,7 +189,7 @@ console.log('G. 技能：可见范围与 DSH 技能来源')
   const visibleFor = options => skills.visibleTo({ skills: options.who ?? 'shared' })
   const provider = createSkillProvider(skills, visibleFor)
   const listed = await provider.list({ who: 'all' })
-  check('技能名带 learned- 前缀，来源名一致', listed.every(item => item.name.startsWith('learned-') && item.provider === provider.name && item.source === provider.name))
+  check('技能名带 shall- 前缀，来源名一致', listed.every(item => item.name.startsWith('shall-') && item.provider === provider.name && item.source === provider.name))
   check('列表里只有名字和描述，没有正文', listed.every(item => !('content' in item)))
   const definition = await provider.get(listed.find(item => item.locator === 'fix-powershell'), { who: 'all' })
   check('get 返回全文', definition?.content?.startsWith('我手动改过') && definition.name === exposedName('fix-powershell'))

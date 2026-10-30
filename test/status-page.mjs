@@ -37,15 +37,15 @@ function check(label, condition, detail = '') {
 console.log('1. 浏览器拿 HTML，curl 拿 JSON')
 {
   check('浏览器导航（Accept: text/html）→ html',
-    formatForRequest({ url: '/dsh-whale-inurqq/status', headers: { accept: 'text/html,application/xhtml+xml' } }) === 'html')
+    formatForRequest({ url: '/shall/qq/status', headers: { accept: 'text/html,application/xhtml+xml' } }) === 'html')
   check('curl 默认（Accept: */*）→ json',
-    formatForRequest({ url: '/dsh-whale-inurqq/status', headers: { accept: '*/*' } }) === 'json')
+    formatForRequest({ url: '/shall/qq/status', headers: { accept: '*/*' } }) === 'json')
   check('没有 Accept 头 → json（脚本最安全的默认）',
-    formatForRequest({ url: '/dsh-whale-inurqq/status', headers: {} }) === 'json')
+    formatForRequest({ url: '/shall/qq/status', headers: {} }) === 'json')
   check('?format=html 能覆盖 Accept（分享给人看的链接）',
-    formatForRequest({ url: '/dsh-whale-inurqq/status?format=html', headers: { accept: '*/*' } }) === 'html')
+    formatForRequest({ url: '/shall/qq/status?format=html', headers: { accept: '*/*' } }) === 'html')
   check('?format=json 能覆盖 Accept（页面里“原始 JSON”链接）',
-    formatForRequest({ url: '/dsh-whale-inurqq/status?format=json', headers: { accept: 'text/html' } }) === 'json')
+    formatForRequest({ url: '/shall/qq/status?format=json', headers: { accept: 'text/html' } }) === 'json')
   check('畸形 URL 不抛、退回 JSON',
     formatForRequest({ url: 'http://[bad', headers: { accept: '*/*' } }) === 'json')
 }
@@ -90,7 +90,7 @@ console.log('2. 转义与格式化')
   check('humanBytes：B/KB/MB',
     humanBytes(900) === '900 B' && humanBytes(2048) === '2.0 KB' && humanBytes(3 * 1024 * 1024) === '3.0 MB')
   check('workspaceRoot 问题给出绝对路径建议', nextStepFor('tasks.workspaceRoot 未配置').includes('绝对路径'))
-  check('token 问题给出凭据建议', nextStepFor('未配置 access token').includes('QQ_ONEBOT_TOKEN'))
+  check('token 问题给出凭据建议', nextStepFor('未配置 access token').includes('SHALL_ONEBOT_TOKEN'))
   check('认不出的问题不硬编建议', nextStepFor('某种没见过的错误') === '')
   // 顺序回归：宽词（连接/交班）不能盖住具体原因
   check('★ webServer 未就绪 → 指向 DSH，而不是 NapCat', (() => {
@@ -112,10 +112,10 @@ console.log('2. 转义与格式化')
 // 3. 渲染：健康快照
 // ===========================================================================
 const healthy = {
-  plugin: 'dsh-whale-inurqq',
+  plugin: 'dsh-whale-shall-adapt',
   version: '9.9.9',
   now: 1760000000000,
-  logFile: 'C:\\Users\\x\\.dsh\\dsh-whale-inurqq\\plugin.log',
+  logFile: 'C:\\Users\\x\\.dsh\\dsh-whale-shall-adapt\\plugin.log',
   alive: {
     alive: true,
     because: ['QQ 通道：1 条连接、WebSocket 处于 OPEN，最近 3 秒内收到过事件帧（selfId=123）'],
@@ -193,7 +193,7 @@ console.log('4. 有待处理项 + 转义')
     html.includes('未配置 access token') && html.includes('不该原样出现'))
   check('每条都给了“下一步”', (html.match(/下一步/g) || []).length >= 2)
   check('workspaceRoot 建议包含绝对路径', html.includes('绝对路径'))
-  check('token 建议包含 QQ_ONEBOT_TOKEN', html.includes('QQ_ONEBOT_TOKEN'))
+  check('token 建议包含 SHALL_ONEBOT_TOKEN', html.includes('SHALL_ONEBOT_TOKEN'))
   check('★ 动态值被转义：没有可执行的 script',
     !html.includes('<script>') && html.includes('&lt;script&gt;'))
   check('★ 工作区里的 img 标签没有被当成 HTML',

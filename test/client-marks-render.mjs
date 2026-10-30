@@ -113,7 +113,7 @@ const HOST_STATE = {
 	lastSignals: { totals: { sessions: 9, humanMessages: 148, delegateRuns: 3, longTools: 5, repeatFailures: 2, freeformAnswers: 4, unpairedToolResults: 0 } },
 	lastRun: { at: 1760000000000, ok: true, reason: '', error: null, spuriousRate: 0, diff: null, warnings: ['画像已达 44 条上限，本轮拒绝 9 条净新增（n9）。'] },
 	injectionLedger: { version: 7, ids: ['a1', 'p1'], counts: { a1: 2, p1: 1 }, lastAt: 1760000000000 },
-	workingNotes: [{ text: '本机插件安装在 R:/dsh-prompt-adapt，配置在 ~/.dsh/prompt-adapt。', at: 1760000000000 }],
+	workingNotes: [{ text: '本机插件安装在 R:/dsh-whale-shall-adapt，配置在 ~/.dsh/shall/adapt。', at: 1760000000000 }],
 	effectiveText: '',
 	injectedText: '以下是这个用户已经确认的协作画像，请在本次会话中遵守：\n\n【稳定特质】\n- ' + CLAIM_A + '\n',
 	injection: {
@@ -387,21 +387,21 @@ let tree = mini.render(registered.component, props)
 let text = treeText(tree)
 
 check('生成警告可见（含换血上限拒绝数）',
-	text.includes(translate('prompt-adapt', 'genWarnings', { n: 1 })) &&
+	text.includes(translate('shall', 'genWarnings', { n: 1 })) &&
 		text.includes('拒绝 9 条净新增'))
 check('账本提示可见（从未注入条数）',
-	text.includes(translate('prompt-adapt', 'ledgerHint', { n: 4, v: 7 })))
+	text.includes(translate('shall', 'ledgerHint', { n: 4, v: 7 })))
 check('账本徽标：已注入版本数',
-	text.includes(translate('prompt-adapt', 'ledgerSeen', { n: 2 })) &&
-		text.includes(translate('prompt-adapt', 'ledgerSeen', { n: 1 })))
+	text.includes(translate('shall', 'ledgerSeen', { n: 2 })) &&
+		text.includes(translate('shall', 'ledgerSeen', { n: 1 })))
 check('账本徽标：从未注入至少 4 条',
-	(text.match(new RegExp(translate('prompt-adapt', 'ledgerNever'), 'g')) || []).length >= 4)
+	(text.match(new RegExp(translate('shall', 'ledgerNever'), 'g')) || []).length >= 4)
 check('画像饱和提示可见（增长上限 + 连续 0 变更）',
-	text.includes(translate('prompt-adapt', 'autoSaturated', { n: 6 })) &&
-		text.includes(translate('prompt-adapt', 'autoSaturatedStreak', { n: 2 })))
+	text.includes(translate('shall', 'autoSaturated', { n: 6 })) &&
+		text.includes(translate('shall', 'autoSaturatedStreak', { n: 2 })))
 check('工作笔记可见（不占画像槽位）',
-	text.includes(translate('prompt-adapt', 'workingNotesHeading', { n: 1 })) &&
-		text.includes(translate('prompt-adapt', 'workingNotesHint')) &&
+	text.includes(translate('shall', 'workingNotesHeading', { n: 1 })) &&
+		text.includes(translate('shall', 'workingNotesHint')) &&
 		text.includes('本机插件安装在'))
 
 console.log('')
@@ -577,8 +577,8 @@ console.log('='.repeat(72))
 console.log('6. 中英键一一对应 + 无硬编码颜色')
 console.log('='.repeat(72))
 {
-	const zh = dicts.get('prompt-adapt|zh')
-	const en = dicts.get('prompt-adapt|en')
+	const zh = dicts.get('shall|zh')
+	const en = dicts.get('shall|en')
 	check('zh / en 两套字典 key 完全一致（新增的 25 个键都成对）',
 		JSON.stringify(Object.keys(zh).sort()) === JSON.stringify(Object.keys(en).sort()),
 		`zh ${Object.keys(zh).length} 键 / en ${Object.keys(en).length} 键`)

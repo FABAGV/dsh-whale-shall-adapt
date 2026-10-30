@@ -21,7 +21,7 @@ const PORT = Number(process.env.HARNESS_PORT ?? 6700)
 const TOKEN = process.env.HARNESS_TOKEN ?? ''
 const LOG_LEVEL = process.env.HARNESS_LOG ?? 'debug'
 /** 项目目录默认落临时目录，不把开发机绝对路径写进仓库 */
-const WORKSPACE_ROOT = process.env.HARNESS_ROOT ?? path.join(os.tmpdir(), 'dsh-whale-inurqq-projects')
+const WORKSPACE_ROOT = process.env.HARNESS_ROOT ?? path.join(os.tmpdir(), 'dsh-whale-shall-adapt-projects')
 
 const config = resolveConfig({
   logLevel: LOG_LEVEL,

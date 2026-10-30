@@ -25,21 +25,21 @@ const check = (name, ok, extra = '') => {
 }
 
 console.log('=== 1. 入口文件与 package.json ===')
-const pkgPath = path.join(PROFILE, 'node_modules', 'dsh-whale-inurqq', 'package.json')
-check('profile/node_modules/dsh-whale-inurqq/package.json 可达', fs.existsSync(pkgPath))
+const pkgPath = path.join(PROFILE, 'node_modules', 'dsh-whale-shall-adapt', 'package.json')
+check('profile/node_modules/dsh-whale-shall-adapt/package.json 可达', fs.existsSync(pkgPath))
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'))
 check('main 字段存在', Boolean(pkg.main), pkg.main)
-const entry = path.join(PROFILE, 'node_modules', 'dsh-whale-inurqq', pkg.main ?? 'lib/index.js')
+const entry = path.join(PROFILE, 'node_modules', 'dsh-whale-shall-adapt', pkg.main ?? 'lib/index.js')
 check('入口文件存在', fs.existsSync(entry), entry)
 check('dsh.bundle.patch 已声明', Boolean(pkg.dsh?.bundle?.patch), pkg.dsh?.bundle?.patch)
-const patchPath = path.join(PROFILE, 'node_modules', 'dsh-whale-inurqq', pkg.dsh?.bundle?.patch ?? 'cordis.patch.yml')
+const patchPath = path.join(PROFILE, 'node_modules', 'dsh-whale-shall-adapt', pkg.dsh?.bundle?.patch ?? 'cordis.patch.yml')
 check('patch 文件存在', fs.existsSync(patchPath))
 check('type=module', pkg.type === 'module')
 
 console.log('\n=== 2. 依赖解析（从 profile 视角）===')
 // 用 profile 下的解析器解析依赖，模拟 DSH 的加载环境
 const { createRequire } = await import('node:module')
-const req = createRequire(path.join(PROFILE, 'node_modules', 'dsh-whale-inurqq', 'package.json'))
+const req = createRequire(path.join(PROFILE, 'node_modules', 'dsh-whale-shall-adapt', 'package.json'))
 for (const dep of ['ws', '@deepseek-ai/schemastery']) {
   try {
     const p = req.resolve(dep)
@@ -68,8 +68,8 @@ try {
   const yaml = fs.readFileSync(patchPath, 'utf8')
   check('patch 非空', yaml.trim().length > 0)
   check('patch 含 insert 段', /insert:/.test(yaml))
-  check('patch 含 id: dsh-whale-inurqq', /id:\s*dsh-whale-inurqq/.test(yaml))
-  check('patch 含 name: dsh-whale-inurqq', /name:\s*dsh-whale-inurqq/.test(yaml))
+  check('patch 含 id: dsh-whale-shall-adapt', /id:\s*dsh-whale-shall-adapt/.test(yaml))
+  check('patch 含 name: dsh-whale-shall-adapt', /name:\s*dsh-whale-shall-adapt/.test(yaml))
 } catch (err) {
   check('读取 patch', false, err.message)
 }

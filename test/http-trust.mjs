@@ -53,11 +53,11 @@ function buildContext() {
   })
   mod.default.apply(root, { logLevel: 'error', scan: { scanOnStart: false } })
   // 插件在 apply 里注册了 webserver/index-inject 的结构化行；桌面端就是靠它把
-  // `__DSH_PROMPT_ADAPT__.token` 交给页面的。这里主动 emit 一次，既验证行存在，
+  // `__DSH_SHALL__.token` 交给页面的。这里主动 emit 一次，既验证行存在，
   // 也拿到本次 apply 生成的 token 供后面的凭据通道测试使用。
   const table = []
   if (typeof root.emit === 'function') root.emit('webserver/index-inject', table)
-  const authRow = table.find(row => row && row.kind === 'global' && row.name === '__DSH_PROMPT_ADAPT__')
+  const authRow = table.find(row => row && row.kind === 'global' && row.name === '__DSH_SHALL__')
   return { root, registered, table, authToken: authRow?.value?.token }
 }
 
@@ -182,9 +182,9 @@ console.log('B2. 桌面端：index-inject 凭据 + CORS 预检（跨源设置页
 console.log('='.repeat(72))
 {
   const authRow = indexInjections.find(
-    row => row && row.kind === 'global' && row.name === '__DSH_PROMPT_ADAPT__',
+    row => row && row.kind === 'global' && row.name === '__DSH_SHALL__',
   )
-  check('(b2) apply 时注册了 __DSH_PROMPT_ADAPT__ 的 global 注入行', !!authRow)
+  check('(b2) apply 时注册了 __DSH_SHALL__ 的 global 注入行', !!authRow)
   check('(b2) 注入行里有非空 token',
     typeof authToken === 'string' && authToken.length >= 16, `len=${authToken?.length ?? 0}`)
 
@@ -197,7 +197,7 @@ console.log('='.repeat(72))
       'sec-fetch-site': 'cross-site',
       'sec-fetch-mode': 'cors',
       'access-control-request-method': 'GET',
-      'access-control-request-headers': 'x-dsh-prompt-adapt-token',
+      'access-control-request-headers': 'x-shall-token',
     },
   })
   check('(b2) 桌面端 CORS 预检 → 204（不能先被信任栅栏 403）',
@@ -206,7 +206,7 @@ console.log('='.repeat(72))
     preflight.headers['access-control-allow-origin'] === '*',
     String(preflight.headers['access-control-allow-origin']))
   check('(b2) 预检允许 token 头',
-    String(preflight.headers['access-control-allow-headers'] || '').includes('x-dsh-prompt-adapt-token'))
+    String(preflight.headers['access-control-allow-headers'] || '').includes('x-shall-token'))
 
   const desktop = await raw({
     path: '/state',
@@ -215,7 +215,7 @@ console.log('='.repeat(72))
       origin: 'null',
       'sec-fetch-site': 'cross-site',
       'sec-fetch-mode': 'cors',
-      'x-dsh-prompt-adapt-token': authToken,
+      'x-shall-token': authToken,
     },
   })
   check('(b2) 带正确 token 的跨源 GET /state → 200', desktop.status === 200,
@@ -241,7 +241,7 @@ console.log('='.repeat(72))
       origin: 'null',
       'sec-fetch-site': 'cross-site',
       'sec-fetch-mode': 'cors',
-      'x-dsh-prompt-adapt-token': 'definitely-wrong',
+      'x-shall-token': 'definitely-wrong',
     },
   })
   check('(b2) 错误 token → 403', badToken.status === 403, `status=${badToken.status}`)

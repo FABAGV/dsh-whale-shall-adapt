@@ -5,7 +5,7 @@
  *   - Config schema 能被宿主那条路径（Standard Schema `~standard.validate`）解析
  *   - apply() 能在一个只有最小服务的 Context 上跑完而不抛
  *   - `systemPrompt.section()` 真的被调用，且回调返回的文本随模式变化
- *   - `promptAdapt` 服务真的注册到了 ctx 上
+ *   - `shallAdapt` 服务真的注册到了 ctx 上
  *   - llm 缺失时不崩（只是不生成画像）
  *
  * ⚠️ 这里**不安装插件、不改用户 profile**，只是在一个隔离的 Context 上试跑。
@@ -43,7 +43,7 @@ const mod = await import('../lib/adapt/plugin.js')
 {
   const plugin = mod.default
   check('默认导出存在', plugin && typeof plugin === 'object')
-  check('default.name 是插件名', plugin.name === 'dsh-prompt-adapt', String(plugin.name))
+  check('default.name 是插件名', plugin.name === 'dsh-whale-shall-adapt', String(plugin.name))
   check('default.apply 是函数', typeof plugin.apply === 'function')
   // 注意：schemastery 的 schema 是**可调用对象**，所以 typeof 是 'function'，不是 'object'。
   check('default.Config 存在（loader 读 runtime.Config，缺了设置页就没有 schema）',
@@ -125,17 +125,17 @@ console.log('='.repeat(72))
 
   check('systemPrompt.section() 注册了画像段与人格段两段', sections.length === 2, `${sections.length} 次`)
   check('人格段单独注册、紧跟画像段、不做变量插值',
-    sections.some(item => item.name === 'dsh-prompt-adapt:persona' && item.order === 31 && item.interpolate === false))
-  const section = sections.find(item => item.name === 'dsh-prompt-adapt:effective-profile')
-  check('注册名正确', section?.name === 'dsh-prompt-adapt:effective-profile', String(section?.name))
+    sections.some(item => item.name === 'shall:persona' && item.order === 31 && item.interpolate === false))
+  const section = sections.find(item => item.name === 'shall:profile')
+  check('注册名正确', section?.name === 'shall:profile', String(section?.name))
   check('order 是 30（在人格前缀之后、工具说明之前）', section?.order === 30, String(section?.order))
   check('text 是函数（每步求值，不是静态串）', typeof section?.text === 'function')
 
   check('用 ctx.timer.interval 排程（不是裸 setInterval）', intervals.length === 1 && intervals[0].delay === 120000,
     `delay=${intervals[0]?.delay}`)
 
-  const service = root.get('promptAdapt')
-  check('promptAdapt 服务已注册到 ctx 上', service != null, typeof service)
+  const service = root.get('shallAdapt')
+  check('shallAdapt 服务已注册到 ctx 上', service != null, typeof service)
   check('服务暴露了模式互斥的 setMode',
     typeof service?.setMode === 'function' && typeof service?.setCustomText === 'function')
 
@@ -168,7 +168,7 @@ console.log('='.repeat(72))
 
   // 模式 1：注入来源换成画像
   service.setMode('auto')
-  const stateService = root.get('promptAdapt')
+  const stateService = root.get('shallAdapt')
   stateService.host.store.state.profile = {
     version: 1,
     entries: [
@@ -208,13 +208,13 @@ console.log('='.repeat(72))
   check('文本变了之后 staleCopy 为 true（提示用户重新复制）', stateService.getState().staleCopy === true)
 
   // 数据落盘位置
-  check('状态目录落在 $DSH_HOME/prompt-adapt 下',
-    fs.existsSync(path.join(tmpRoot, 'prompt-adapt', 'state.json')),
-    path.join(tmpRoot, 'prompt-adapt'))
+  check('状态目录落在 $DSH_HOME/shall/adapt 下',
+    fs.existsSync(path.join(tmpRoot, 'shall', 'adapt', 'state.json')),
+    path.join(tmpRoot, 'shall', 'adapt'))
   check('没有在会话根目录下写任何东西',
     fs.readdirSync(path.join(tmpRoot, 'sessions')).length === 0)
 
-  const saved = JSON.parse(fs.readFileSync(path.join(tmpRoot, 'prompt-adapt', 'state.json'), 'utf8'))
+  const saved = JSON.parse(fs.readFileSync(path.join(tmpRoot, 'shall', 'adapt', 'state.json'), 'utf8'))
   check('落盘的 mode 是合法枚举值', ['auto', 'custom'].includes(saved.mode), String(saved.mode))
   check('落盘含四个信号的字段位', 'lastSignals' in saved)
   check('落盘不含任何形如密钥的字段',

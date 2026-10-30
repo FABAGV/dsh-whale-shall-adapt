@@ -23,7 +23,7 @@ import { Context } from '@deepseek-ai/cordis'
 const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'pa-mark-ledger-'))
 process.env.DSH_HOME = TMP_ROOT
 const sessionsRoot = path.join(TMP_ROOT, 'sessions')
-const stateDir = path.join(TMP_ROOT, 'prompt-adapt')
+const stateDir = path.join(TMP_ROOT, 'shall', 'adapt')
 fs.mkdirSync(sessionsRoot, { recursive: true })
 fs.mkdirSync(stateDir, { recursive: true })
 
@@ -136,7 +136,7 @@ plugin.apply(root, {
   },
   inject: { budgetTokens: 1500, maxPinned: 10 },
 })
-const service = root.get('promptAdapt')
+const service = root.get('shallAdapt')
 async function waitFor(condition, label, timeoutMs = 5000) {
   const started = Date.now()
   for (;;) {

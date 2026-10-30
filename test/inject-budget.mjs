@@ -349,7 +349,7 @@ console.log('='.repeat(72))
   const home = process.env.DSH_HOME || join(process.env.USERPROFILE || '', '.dsh')
   let real = null
   try {
-    real = JSON.parse(readFileSync(join(home, 'prompt-adapt', 'state.json'), 'utf8')).profile
+    real = JSON.parse(readFileSync(join(home, 'shall', 'adapt', 'state.json'), 'utf8')).profile
   } catch {
     real = null
   }

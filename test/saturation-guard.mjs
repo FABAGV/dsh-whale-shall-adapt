@@ -20,7 +20,7 @@ import { Context } from '@deepseek-ai/cordis'
 const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'pa-saturation-'))
 process.env.DSH_HOME = TMP_ROOT
 const sessionsRoot = path.join(TMP_ROOT, 'sessions')
-const stateDir = path.join(TMP_ROOT, 'prompt-adapt')
+const stateDir = path.join(TMP_ROOT, 'shall', 'adapt')
 fs.mkdirSync(sessionsRoot, { recursive: true })
 fs.mkdirSync(stateDir, { recursive: true })
 
@@ -156,7 +156,7 @@ plugin.apply(root, {
   inject: { budgetTokens: 1500, maxPinned: 10 },
 })
 
-const service = root.get('promptAdapt')
+const service = root.get('shallAdapt')
 function stateFile() {
   return JSON.parse(fs.readFileSync(path.join(stateDir, 'state.json'), 'utf8'))
 }

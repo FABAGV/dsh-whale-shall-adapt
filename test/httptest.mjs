@@ -86,7 +86,7 @@ const { registered } = buildContext()
   check('kind 是 prefix', route?.kind === 'prefix', String(route?.kind))
   check('path 是插件专属前缀', route?.path === API_PREFIX, String(route?.path))
   check('handler 是函数', typeof route?.handler === 'function')
-  check('前缀不会撞到别人（带插件名）', API_PREFIX.startsWith('/dsh-prompt-adapt/'))
+  check('前缀不会撞到别人（带插件名）', API_PREFIX.startsWith('/shall/'))
 }
 
 console.log('')
@@ -107,7 +107,7 @@ try {
   {
     const res = await get('/')
     const json = await res.json()
-    check('GET / 返回自检信息', res.status === 200 && json.plugin === 'dsh-prompt-adapt', `status=${res.status}`)
+    check('GET / 返回自检信息', res.status === 200 && json.plugin === 'dsh-whale-shall-adapt', `status=${res.status}`)
     check('GET / 列出了端点', Array.isArray(json.endpoints) && json.endpoints.length >= 5,
       `${json.endpoints?.length} 个`)
   }
@@ -267,8 +267,8 @@ try {
 
   // ── 状态持久化到临时 DSH_HOME ────────────────────────────────────
   {
-    const stateFile = path.join(tmpRoot, 'prompt-adapt', 'state.json')
-    check('状态写在 $DSH_HOME/prompt-adapt 下', fs.existsSync(stateFile), stateFile)
+    const stateFile = path.join(tmpRoot, 'shall', 'adapt', 'state.json')
+    check('状态写在 $DSH_HOME/shall/adapt 下', fs.existsSync(stateFile), stateFile)
     const saved = JSON.parse(fs.readFileSync(stateFile, 'utf8'))
     check('落盘 mode 是合法枚举', ['auto', 'custom'].includes(saved.mode), String(saved.mode))
     check('落盘不含密钥字段', !/(apiKey|api_key|token|secret|password)/i.test(JSON.stringify(saved)))
@@ -293,10 +293,10 @@ console.log('='.repeat(72))
     threw = error
   }
   check('没有 webServer 时 apply() 不抛', threw === null, threw?.message)
-  check('服务仍然注册（宿主进程内可用）', ctx?.root.get('promptAdapt') != null)
+  check('服务仍然注册（宿主进程内可用）', ctx?.root.get('shallAdapt') != null)
   check('没有注册任何路由', ctx?.registered.length === 0, `${ctx?.registered.length} 条`)
   // 服务方法仍然可用 —— 只是浏览器够不到
-  const service = ctx.root.get('promptAdapt')
+  const service = ctx.root.get('shallAdapt')
   let methodThrew = null
   try {
     service.setMode('custom')
@@ -307,7 +307,7 @@ console.log('='.repeat(72))
   }
   check('降级时服务方法仍可用（扫描/画像/注入都不受影响）', methodThrew === null, methodThrew?.message)
   check('降级时状态仍然落盘',
-    fs.existsSync(path.join(tmpRoot, 'prompt-adapt', 'state.json')))
+    fs.existsSync(path.join(tmpRoot, 'shall', 'adapt', 'state.json')))
 }
 
 console.log('')

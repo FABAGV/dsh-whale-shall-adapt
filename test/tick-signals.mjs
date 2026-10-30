@@ -122,7 +122,7 @@ function boot({ stateDir, sessionsRoot, scanOnStart = false, profile = {}, llm =
     scan: { scanOnStart, intervalMs: 120000 },
     profile,
   })
-  const service = root.get('promptAdapt')
+  const service = root.get('shallAdapt')
   return { root, service, intervals, sections, stateFile: path.join(stateDir, 'state.json') }
 }
 

@@ -1,5 +1,5 @@
 /**
- * 实测对比：用**用户当前真实画像**（$DSH_HOME/prompt-adapt/state.json）跑注入裁剪，
+ * 实测对比：用**用户当前真实画像**（$DSH_HOME/shall/adapt/state.json）跑注入裁剪，
  * 分别用旧参数（600 / B 全量）与新参数（1500 / B≤50% / A≥30%）算出各分类条数与估算量。
  *
  * 这是一次性测量工具（不改状态、不落盘），用于交付时的对比表。
@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import { planProfileInjection, estimateTokens, profileEntryScore } from '../lib/adapt/profile.js'
 
 const home = process.env.DSH_HOME || join(process.env.USERPROFILE || '', '.dsh')
-const statePath = join(home, 'prompt-adapt', 'state.json')
+const statePath = join(home, 'shall', 'adapt', 'state.json')
 const state = JSON.parse(readFileSync(statePath, 'utf8'))
 const profile = state.profile
 
@@ -148,7 +148,7 @@ report('默认（不传 budgetTokens，应等于 DEFAULT_INJECT_BUDGET_TOKENS）
 // state.json 会随着用户继续用而自增（本次改造期间就从 v26 长到了 v28），
 // 所以"点名的那一版"必须从历史快照里取，不能用当前 state.json 冒充。
 // ---------------------------------------------------------------------------
-const historyPath = join(home, 'prompt-adapt', 'profile-history')
+const historyPath = join(home, 'shall', 'adapt', 'profile-history')
 let snapshots = []
 try {
   snapshots = readdirSync(historyPath).filter(name => /^v\d+-.*\.json$/.test(name))

@@ -76,9 +76,9 @@ function buildContext() {
 }
 
 const { root, registered } = buildContext()
-const service = root.get('promptAdapt')
+const service = root.get('shallAdapt')
 const state = service.host.store.state
-const stateFile = path.join(tmpRoot, 'prompt-adapt', 'state.json')
+const stateFile = path.join(tmpRoot, 'shall', 'adapt', 'state.json')
 
 /** 造一条画像条目（与宿主 normalizeProfile 的字段一致）。 */
 const entry = (id, category, claim) => ({

@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 
-const { SessionScanner } = await import('file:///R:/dsh-prompt-adapt/lib/sessions.js')
+const { SessionScanner } = await import('file:///R:/dsh-whale-shall-adapt/lib/sessions.js')
 
 const sessionsRoot = path.join(os.homedir(), '.dsh', 'sessions')
 const tmp = path.join(os.tmpdir(), 'verify-incr-' + Date.now())

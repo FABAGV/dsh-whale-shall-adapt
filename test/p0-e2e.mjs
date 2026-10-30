@@ -26,7 +26,7 @@ import { Context } from '@deepseek-ai/cordis'
 const TMP_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'pa-p0-e2e-'))
 process.env.DSH_HOME = TMP_ROOT
 const sessionsRoot = path.join(TMP_ROOT, 'sessions')
-const stateDir = path.join(TMP_ROOT, 'prompt-adapt')
+const stateDir = path.join(TMP_ROOT, 'shall', 'adapt')
 fs.mkdirSync(sessionsRoot, { recursive: true })
 fs.mkdirSync(stateDir, { recursive: true })
 
@@ -172,7 +172,7 @@ plugin.apply(root, {
   inject: { budgetTokens: 1500, maxPinned: 10 },
 })
 
-const service = root.get('promptAdapt')
+const service = root.get('shallAdapt')
 check('服务注册成功', !!service && typeof service.getState === 'function')
 check('定时器已排程（scanOnStart=false 时仍会排）', timers.length >= 1, `timers=${timers.length}`)
 

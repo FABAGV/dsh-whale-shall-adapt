@@ -872,7 +872,7 @@ async function main() {
 		return;
 	}
 
-	console.log('dsh-prompt-adapt 客户端半边自检');
+	console.log('dsh-whale-shall-adapt 客户端半边自检');
 	console.log('bundle: ' + CLIENT_PATH);
 
 	// -------------------------------------------------------------------
@@ -890,7 +890,7 @@ async function main() {
 		process.exitCode = 1;
 		return;
 	}
-	eq('模块 id 是包名', mod.__id, 'dsh-prompt-adapt');
+	eq('模块 id 是包名', mod.__id, 'dsh-whale-shall-adapt');
 	ok('导出 apply()', typeof mod.apply === 'function');
 	eq('导出 inject = ["slots","locale"]', mod.inject, ['slots', 'locale']);
 	ok('导出了 __internals（标定工具入口）', !!mod.__internals);
@@ -1072,11 +1072,11 @@ async function main() {
 	ok('settings.section 声明后才有注册（inject 是等待语义）', !!harness.registered);
 	const opt = harness.registered ? harness.registered.options : {};
 	eq('注册进 settings.section', opt.name, 'settings.section');
-	eq('列表槽位 id 唯一', opt.id, 'prompt-adapt');
+	eq('列表槽位 id 唯一', opt.id, 'shall');
 	eq('order = 40', opt.order, 40);
 	ok('label 是 thunk（跟随语言，不重新注册）', typeof opt.label === 'function', typeof opt.label);
 	eq('label() 走字典', opt.label(), 'AI 适配');
-	ok('注册了 zh/en 两套字典', harness.dicts.has('prompt-adapt|zh') && harness.dicts.has('prompt-adapt|en'));
+	ok('注册了 zh/en 两套字典', harness.dicts.has('shall|zh') && harness.dicts.has('shall|en'));
 	ok('ctx.effect 被用来托管生命周期', harness.effectLabels.length >= 3, harness.effectLabels.join(' | '));
 
 	// -------------------------------------------------------------------
@@ -1093,7 +1093,7 @@ async function main() {
 	await injectedFace.actions.refresh();
 	// 模拟"上次复制过"：本地基线
 	harness.storage.set(
-		'dsh-prompt-adapt:copied:v1',
+		'shall:copied:v1',
 		JSON.stringify({
 			text: core.serializePortrait(BASELINE_ENTRIES),
 			at: 1759900000000,
@@ -1187,7 +1187,7 @@ async function main() {
 	ok('algorithmVersion 是字符串（宿主 markCopied 只接受 typeof === "string"）',
 		!!copiedCall && typeof copiedCall.body.algorithmVersion === 'string',
 		'typeof=' + (copiedCall ? typeof copiedCall.body.algorithmVersion : 'n/a'));
-	ok('本地也记了基线', harness.storage.has('dsh-prompt-adapt:copied:v1'));
+	ok('本地也记了基线', harness.storage.has('shall:copied:v1'));
 	tree = harness.mini.tree;
 	ok('复制之后修订归零（store emit 驱动重渲染，无需手动刷新）',
 		treeText(tree).indexOf('与你上次复制时一致') >= 0, treeText(tree).slice(0, 700));
@@ -1234,7 +1234,7 @@ async function main() {
 	ok('确认后才真的发切换请求', harness.calls.some(c => c.url.endsWith('/mode') && c.body.mode === 'auto'));
 
 	// —— 交互：重新生成（宿主回 202 + 无 running 字段 → 客户端必须自己观察） ——
-	globalThis.__DSH_PROMPT_ADAPT__ = { pollMs: 20 };
+	globalThis.__DSH_SHALL__ = { pollMs: 20 };
 	harness.setApiState(buildHostState());
 	await injectedFace.actions.refresh();
 	harness.calls.length = 0;
@@ -1261,7 +1261,7 @@ async function main() {
 	await sleep(160);
 	ok('退出后停止轮询（不再对 /state 发请求）', harness.calls.length === callsAfterSettle,
 		`before=${callsAfterSettle} after=${harness.calls.length}`);
-	delete globalThis.__DSH_PROMPT_ADAPT__;
+	delete globalThis.__DSH_SHALL__;
 
 	// -------------------------------------------------------------------
 	section('4b. 注入区显示各分类条数（取自宿主 injectedByCategory）');
@@ -1325,7 +1325,7 @@ async function main() {
 	let offlineTree = offline.mini.render(offline.registered.component, offlineProps);
 	const offlineText = treeText(offlineTree);
 	ok('读不到宿主时显示"未连接宿主"', offlineText.indexOf('未连接宿主') >= 0);
-	ok('断连时给出实际请求的 URL', offlineText.indexOf('/dsh-prompt-adapt/api/state') >= 0);
+	ok('断连时给出实际请求的 URL', offlineText.indexOf('/shall/api/state') >= 0);
 	ok('断连时提供"重试"按钮', !!findButton(offlineTree, '重试'));
 	ok('断连时提供"载入预览数据"按钮（且是明示的演示数据）',
 		!!findButton(offlineTree, '载入预览数据'));
@@ -1341,8 +1341,8 @@ async function main() {
 	// -------------------------------------------------------------------
 	section('6. 语言：文案没有写死在组件里');
 	// -------------------------------------------------------------------
-	const en = harness.dicts.get('prompt-adapt|en');
-	const zh = harness.dicts.get('prompt-adapt|zh');
+	const en = harness.dicts.get('shall|en');
+	const zh = harness.dicts.get('shall|zh');
 	ok('zh / en 两套字典 key 完全一致',
 		JSON.stringify(Object.keys(zh).sort()) === JSON.stringify(Object.keys(en).sort()));
 	ok('字典 key 数量合理（> 90 条）', Object.keys(zh).length > 90, String(Object.keys(zh).length));
@@ -1404,7 +1404,7 @@ async function main() {
 		ok('202 之后客户端进入"生成中"', face.hooks.adapt.getSnapshot().regenerating === true);
 
 		// 非法 mode 必须被宿主拒掉，且客户端要如实报错
-		const bad = await fetch('/dsh-prompt-adapt/api/mode', {
+		const bad = await fetch('/shall/api/mode', {
 			method: 'POST',
 			body: JSON.stringify({ mode: 'both' }),
 		});
@@ -1413,7 +1413,7 @@ async function main() {
 		ok('400 响应里有可读的 error', typeof badBody.error === 'string' && badBody.error.length > 0);
 
 		// 未知路径
-		const missing = await fetch('/dsh-prompt-adapt/api/nope');
+		const missing = await fetch('/shall/api/nope');
 		eq('未知路径回 404', missing.status, 404);
 
 		// 真实渲染一遍，确认宿主数据能画出来

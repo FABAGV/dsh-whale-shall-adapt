@@ -101,7 +101,7 @@ export function writeWorldFiles(home, { now = Date.now() } = {}) {
     events: workEvents(twoHoursAgo, ['子代理收到的委派任务'], { toolCalls: 2 }),
   })
 
-  const corpusDir = path.join(home, 'dsh-whale-inurqq', 'corpus', `group-${QQ_GROUP}`)
+  const corpusDir = path.join(home, 'shall', 'qq', 'corpus', `group-${QQ_GROUP}`)
   fs.mkdirSync(corpusDir, { recursive: true })
   const day = new Date(now).toISOString().slice(0, 10)
   const members = [
@@ -234,13 +234,13 @@ export async function buildWorld({ home, consolePort = 0, timer = 'manual', auto
   const mod = await import('../../lib/adapt/plugin.js')
   mod.default.apply(root, {
     logLevel: 'error',
-    stateDir: path.join(home, 'prompt-adapt'),
+    stateDir: path.join(home, 'shall', 'adapt'),
     sessionsRoot: path.join(home, 'sessions'),
     scan: { scanOnStart: true, intervalMs: 120000 },
     console: { enabled: true, port: consolePort },
     skills: { autoMine },
   })
-  const service = root.get('promptAdapt')
+  const service = root.get('shallAdapt')
   const waitFor = async (predicate, timeoutMs = 15000) => {
     const started = Date.now()
     while (Date.now() - started < timeoutMs) {

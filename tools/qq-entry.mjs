@@ -45,9 +45,9 @@ const PORT = Number(process.env.ENTRY_PORT ?? 6700)
  */
 const TOKEN = process.env.ENTRY_TOKEN ?? ''
 /** QQ 项目目录的父目录：默认落在系统临时目录，避免把开发机的绝对路径写进仓库 */
-const WORKSPACE_ROOT = process.env.ENTRY_ROOT ?? path.join(os.tmpdir(), 'dsh-whale-inurqq-entry-projects')
+const WORKSPACE_ROOT = process.env.ENTRY_ROOT ?? path.join(os.tmpdir(), 'dsh-whale-shall-adapt-entry-projects')
 /** 每次运行都用全新的状态目录：断言不该被上一次运行的残留绑定影响 */
-const STATE_DIR = process.env.ENTRY_STATE_DIR ?? path.join(os.tmpdir(), `dsh-whale-inurqq-entry-${PORT}-${Date.now()}`)
+const STATE_DIR = process.env.ENTRY_STATE_DIR ?? path.join(os.tmpdir(), `dsh-whale-shall-adapt-entry-${PORT}-${Date.now()}`)
 
 /**
  * 是否开启 v3 的常驻对话会话（`conversation.enabled`）
@@ -1518,15 +1518,15 @@ console.log(
 )
 
 // ── 工具断言 ───────────────────────────────────────────────────────────
-const sendTool = registeredTools.get('qq_send')
-const listTool = registeredTools.get('qq_list_chats')
-const histTool = registeredTools.get('qq_history')
-const tasksTool = registeredTools.get('qq_tasks')
+const sendTool = registeredTools.get('shall_qq_send')
+const listTool = registeredTools.get('shall_qq_chats')
+const histTool = registeredTools.get('shall_qq_history')
+const tasksTool = registeredTools.get('shall_qq_tasks')
 const toolChecks = [
-  ['qq_send 已注册', Boolean(sendTool)],
-  ['qq_list_chats 已注册', Boolean(listTool)],
-  ['qq_history 已注册', Boolean(histTool)],
-  ['qq_tasks 已注册（任务台账，跨会话可查）', Boolean(tasksTool)],
+  ['shall_qq_send 已注册', Boolean(sendTool)],
+  ['shall_qq_chats 已注册', Boolean(listTool)],
+  ['shall_qq_history 已注册', Boolean(histTool)],
+  ['shall_qq_tasks 已注册（任务台账，跨会话可查）', Boolean(tasksTool)],
   ['已注册门控', guards.length > 0],
 ]
 
@@ -1536,47 +1536,47 @@ if (sendTool) {
       { chat_type: 'private', chat_id: '20002', text: '这是 agent 主动发出的消息' },
       {},
     )
-    toolChecks.push(['qq_send 执行成功', out?.delivered === true])
-    toolChecks.push(['qq_send 输出可渲染', Array.isArray(sendTool.output?.render({}, out))])
+    toolChecks.push(['shall_qq_send 执行成功', out?.delivered === true])
+    toolChecks.push(['shall_qq_send 输出可渲染', Array.isArray(sendTool.output?.render({}, out))])
   } catch (err) {
-    toolChecks.push([`qq_send 执行成功（抛错: ${err.message}）`, false])
+    toolChecks.push([`shall_qq_send 执行成功（抛错: ${err.message}）`, false])
   }
 }
 if (listTool) {
   const out = await listTool.execute({}, {})
-  toolChecks.push(['qq_list_chats 列出已接入会话', (out?.chats ?? []).length >= 2])
+  toolChecks.push(['shall_qq_chats 列出已接入会话', (out?.chats ?? []).length >= 2])
   toolChecks.push(['输出里有工作区路径', (out?.chats ?? []).every((c) => Boolean(c.workspacePath))])
 }
 if (histTool) {
   const out = await histTool.execute({}, {})
-  toolChecks.push(['qq_history 能查到语料', (out?.count ?? 0) > 0])
-  toolChecks.push(['qq_history 输出可渲染', Array.isArray(histTool.output?.render({}, out))])
+  toolChecks.push(['shall_qq_history 能查到语料', (out?.count ?? 0) > 0])
+  toolChecks.push(['shall_qq_history 输出可渲染', Array.isArray(histTool.output?.render({}, out))])
 }
 if (tasksTool) {
   const out = await tasksTool.execute({}, {})
   // ⚠️ `conversation.enabled=true` 下 mock 阶段的任务消息先进常驻会话，
-  //    不会产生任何任务记录（派活得靠模型调 qq_dispatch，而假 DSH 里没有模型）。
+  //    不会产生任何任务记录（派活得靠模型调 shall_qq_dispatch，而假 DSH 里没有模型）。
   //    所以这里分两种判据：v2 下必须有**非空**记录；v3 下必须是**空但调用成功**。
   //    两种判据都比"调用抛错"强 —— 后者才是真正要拦的回归。
   toolChecks.push([
-    CONV ? 'qq_tasks 可调用且台账为空（v3：mock 阶段没有派活）' : 'qq_tasks 能列出任务台账',
+    CONV ? 'shall_qq_tasks 可调用且台账为空（v3：mock 阶段没有派活）' : 'shall_qq_tasks 能列出任务台账',
     CONV ? Array.isArray(out?.tasks) && out.tasks.length === 0 && out.count === 0 : (out?.tasks ?? []).length >= 1,
   ])
-  toolChecks.push(['qq_tasks 输出可渲染', Array.isArray(tasksTool.output?.render({}, out))])
+  toolChecks.push(['shall_qq_tasks 输出可渲染', Array.isArray(tasksTool.output?.render({}, out))])
   toolChecks.push([
-    'qq_tasks 列出的任务带状态与 sessionId',
+    'shall_qq_tasks 列出的任务带状态与 sessionId',
     (out?.tasks ?? []).every((t) => Boolean(t.status) && typeof t.no === 'number'),
   ])
 }
 if (guards.length > 0) {
-  const denied = guards[0]({ name: 'qq_send', arguments: { chat_type: 'group', chat_id: '99999', text: 'x' } })
-  const allowed = guards[0]({ name: 'qq_send', arguments: { chat_type: 'private', chat_id: '20002', text: 'x' } })
+  const denied = guards[0]({ name: 'shall_qq_send', arguments: { chat_type: 'group', chat_id: '99999', text: 'x' } })
+  const allowed = guards[0]({ name: 'shall_qq_send', arguments: { chat_type: 'private', chat_id: '20002', text: 'x' } })
   const unrelated = guards[0]({ name: 'read', arguments: {} })
-  const tasksGuard = guards[0]({ name: 'qq_tasks', arguments: { chat_type: 'group', chat_id: '99999' } })
+  const tasksGuard = guards[0]({ name: 'shall_qq_tasks', arguments: { chat_type: 'group', chat_id: '99999' } })
   toolChecks.push(['门控拒绝被屏蔽的群', typeof denied === 'string'])
   toolChecks.push(['门控放行范围内的私聊', allowed === undefined])
   toolChecks.push(['门控不干预其他工具', unrelated === undefined])
-  toolChecks.push(['门控不干预只读的 qq_tasks', tasksGuard === undefined])
+  toolChecks.push(['门控不干预只读的 shall_qq_tasks', tasksGuard === undefined])
 }
 runChecks('工具断言', toolChecks)
 
@@ -1595,7 +1595,7 @@ try {
   // 控制词已经删掉：Schema 里**不应该**再有取消前缀这一项
   // （留一个默认 "/cancel" 会让人以为关键词控制还在）
   schemaChecks.push([
-    'Schema 里没有 cancelPrefix（控制词已删，取消改由会话理解意图 + qq_tasks 工具）',
+    'Schema 里没有 cancelPrefix（控制词已删，取消改由会话理解意图 + shall_qq_tasks 工具）',
     empty.value?.tasks?.cancelPrefix === undefined && empty.value?.tasks !== undefined,
   ])
   const bad = Config['~standard'].validate({ connection: { reversePort: 999999 } })
@@ -1617,7 +1617,7 @@ runChecks('配置 Schema 断言', schemaChecks)
 const corpusChecks = []
 try {
   const home = process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
-  const corpusRoot = path.join(home, 'dsh-whale-inurqq', 'corpus')
+  const corpusRoot = path.join(home, 'shall', 'qq', 'corpus')
   corpusChecks.push(['语料根目录已创建', fs.existsSync(corpusRoot)])
 
   const dirs = fs.existsSync(corpusRoot) ? fs.readdirSync(corpusRoot) : []
@@ -1656,7 +1656,7 @@ runChecks('语料库断言', corpusChecks)
 // 同一份快照：curl/脚本默认拿 JSON（行为不能变），浏览器地址栏打开拿体检页。
 // 这几条同时验证 `?format=` 查询串不会把路由打成 404。
 {
-  const endpoint = `http://127.0.0.1:${PORT}/dsh-whale-inurqq/status`
+  const endpoint = `http://127.0.0.1:${PORT}/shall/qq/status`
   const jsonRes = await fetch(endpoint)
   const jsonType = String(jsonRes.headers.get('content-type') ?? '')
   const jsonText = await jsonRes.text()
@@ -1668,7 +1668,7 @@ runChecks('语料库断言', corpusChecks)
 
   runChecks('状态端点呈现', [
     ['默认（Accept: */*）仍是 JSON', jsonType.includes('application/json') && jsonText.trimStart().startsWith('{')],
-    ['浏览器 Accept: text/html 拿到体检页', htmlType.includes('text/html') && htmlText.includes('dsh-whale-inurqq 体检')],
+    ['浏览器 Accept: text/html 拿到体检页', htmlType.includes('text/html') && htmlText.includes('shall QQ 体检')],
     ['体检页带 x-content-type-options: nosniff', htmlRes.headers.get('x-content-type-options') === 'nosniff'],
     ['?format=json 能覆盖 Accept', forced.status === 200 && forcedType.includes('application/json')],
     ['查询串不影响路由（带 ?format= 不 404）', forced.status === 200],
@@ -1685,11 +1685,11 @@ const promptsFor = (sessionId) => calls.prompts.filter((p) => p.sessionId === se
 const okArchivesFor = (sessionId) => calls.archives.filter((a) => a.sessionId === sessionId && a.ok)
 
 async function fetchStatus() {
-  const res = await fetch(`http://127.0.0.1:${PORT}/dsh-whale-inurqq/status`)
+  const res = await fetch(`http://127.0.0.1:${PORT}/shall/qq/status`)
   return await res.json()
 }
 
-/** 通过 qq_tasks 工具读台账（这正是常驻会话能看到的视角） */
+/** 通过 shall_qq_tasks 工具读台账（这正是常驻会话能看到的视角） */
 async function listTasksOf(chatType, chatId, limit = 20) {
   if (!tasksTool) return []
   const out = await tasksTool.execute({ chat_type: chatType, chat_id: chatId, limit }, {})
@@ -1997,14 +1997,14 @@ if (CONV) {
 
     // ══ N9. 派活工具与 scope 门控 ═════════════════════════════════════
     //
-    // ⚠️ **需求变更**：新逻辑链条下 `qq_dispatch`（把活派给独立任务会话）整个退出
-    //    默认路径，所以旧断言「N9-a qq_dispatch 已注册」连同 N9-b/N9-c、澄清-a/b/c
+    // ⚠️ **需求变更**：新逻辑链条下 `shall_qq_dispatch`（把活派给独立任务会话）整个退出
+    //    默认路径，所以旧断言「N9-a shall_qq_dispatch 已注册」连同 N9-b/N9-c、澄清-a/b/c
     //    一起废弃（它们测的是被废除的行为）。取代它们的是下面这一条**反向断言**：
-    //    默认路径注册表里**不该**有 qq_dispatch。
+    //    默认路径注册表里**不该**有 shall_qq_dispatch。
     //    v2 那一趟（`conversation.enabled=false`）仍然会注册它，由 v2 段的断言覆盖。
-    const dispatchTool = registeredTools.get('qq_dispatch')
+    const dispatchTool = registeredTools.get('shall_qq_dispatch')
     v3Checks.push([
-      'N9-a 默认路径**不注册** qq_dispatch（没有独立任务会话可派 —— 这是需求，不是疏漏）',
+      'N9-a 默认路径**不注册** shall_qq_dispatch（没有独立任务会话可派 —— 这是需求，不是疏漏）',
       dispatchTool === undefined,
     ])
 
@@ -2013,12 +2013,12 @@ if (CONV) {
     // 为什么必须是 section 而不是 context：context 是**动态上下文快照**，
     // 文本一变就多一条 user 消息（见 context.js 顶部）。行为约定是恒定的，
     // 该进系统提示词本体。这条断言就是在守这个选择。
-    v3Checks.push(['前台-a 已注册为 systemPrompt.section', sections.has('dsh-whale-inurqq:front-desk')])
+    v3Checks.push(['前台-a 已注册为 systemPrompt.section', sections.has('shall:frontdesk')])
     v3Checks.push([
       '前台-b 排序在人设之后、第一方工具指引之前（order=10）',
-      sections.get('dsh-whale-inurqq:front-desk')?.order === 10,
+      sections.get('shall:frontdesk')?.order === 10,
     ])
-    const frontDeskEntry = sections.get('dsh-whale-inurqq:front-desk')
+    const frontDeskEntry = sections.get('shall:frontdesk')
     // ⚠️ 必须用**刚刚建出来的**那台常驻会话去问，不能用 C1 的 rootSessionId：
     //    本段后面的交班会把 C1 的常驻会话换代，换代之后旧 id 已经不在映射里，
     //    `scopeForSession` 返回空串 → section 渲染成空串 → 断言假失败。
@@ -2058,8 +2058,8 @@ if (CONV) {
       deskRootText.includes('直接动手') && deskRootText.includes('不许'),
     ])
     v3Checks.push([
-      '前台-g 约定里写了进度询问的查证顺序（qq_alive → qq_tasks → 如实回答）',
-      deskRootText.includes('qq_alive') && deskRootText.includes('qq_tasks') && deskRootText.includes('不要编'),
+      '前台-g 约定里写了进度询问的查证顺序（shall_qq_alive → shall_qq_tasks → 如实回答）',
+      deskRootText.includes('shall_qq_alive') && deskRootText.includes('shall_qq_tasks') && deskRootText.includes('不要编'),
     ])
     v3Checks.push([
       '前台-h 约定里点名"停一下看看日志"不是要停活（关键词误判的反面例子仍在）',
@@ -2073,8 +2073,8 @@ if (CONV) {
     ])
 
     // ══ N12. 存活检测：工具侧必须给**真实**状态 ═══════════════════════
-    const aliveTool = registeredTools.get('qq_alive')
-    v3Checks.push(['存活-a qq_alive 已注册', Boolean(aliveTool)])
+    const aliveTool = registeredTools.get('shall_qq_alive')
+    v3Checks.push(['存活-a shall_qq_alive 已注册', Boolean(aliveTool)])
     if (aliveTool) {
       const out = await aliveTool.execute({}, {})
       const st = await fetchStatus()
@@ -2092,14 +2092,14 @@ if (CONV) {
     {
       const tk = await tasksTool.execute({}, {})
       v3Checks.push([
-        '存活-f qq_tasks 的输出里也带存活判定（问进度时第一眼就能看到"它还在不在"）',
+        '存活-f shall_qq_tasks 的输出里也带存活判定（问进度时第一眼就能看到"它还在不在"）',
         tk?.alive?.alive === true && String(tk?.alive?.because ?? '').length > 0,
       ])
       v3Checks.push([
-        '存活-g qq_tasks 的 alive.tasks 给出任务侧独立结论（在跑的会话还在不在）',
+        '存活-g shall_qq_tasks 的 alive.tasks 给出任务侧独立结论（在跑的会话还在不在）',
         String(tk?.alive?.tasks ?? '').startsWith('任务侧：'),
       ])
-      v3Checks.push(['存活-h qq_tasks 渲染里带上了存活那一行', String(tasksTool.output?.render({}, tk)?.[0]?.text ?? '').includes('插件')])
+      v3Checks.push(['存活-h shall_qq_tasks 渲染里带上了存活那一行', String(tasksTool.output?.render({}, tk)?.[0]?.text ?? '').includes('插件')])
     }
     v3Checks.push([
       '存活-i 状态端点暴露了 alive 判定与依据（alive.alive/alive.because/alive.evidence）',
@@ -2121,9 +2121,9 @@ if (CONV) {
 
     // ══ N2. 旧的"派活 → 真建任务会话 → 台账正确"整段废弃 ══════════════
     //
-    // ⚠️ **需求变更**：N2-a/b/c/d 四条测的是 `qq_dispatch` 建任务会话与任务台账。
+    // ⚠️ **需求变更**：N2-a/b/c/d 四条测的是 `shall_qq_dispatch` 建任务会话与任务台账。
     //    新逻辑链条下这两样都不存在，所以整段删除，**不用新断言假装覆盖它** ——
-    //    取而代之的是上面 N9-a（注册表里没有 qq_dispatch）、N1-d（台账恒空）与
+    //    取而代之的是上面 N9-a（注册表里没有 shall_qq_dispatch）、N1-d（台账恒空）与
     //    新逻辑链条段里的「常驻-3/4/5/6」（连发两条只建一台会话）。
 
     // ══ 硬约束②：群聊静默消息不进任何会话 ════════════════════════════
@@ -2155,7 +2155,7 @@ if (CONV) {
     // 两个信号源：写类工具的 tool/call + 配对成功的 tool/result（覆盖度高但只能说
     // "工具确认改过"），以及 deliverables/presented（agent 自己声明的交付物）。
     //
-    // ⚠️ **需求变更**：旧版这一整段跑在 `qq_dispatch` 建出来的**任务会话**上
+    // ⚠️ **需求变更**：旧版这一整段跑在 `shall_qq_dispatch` 建出来的**任务会话**上
     //    （为了测任务号前缀）。现在没有任务会话，所以改成跑在**常驻对接会话**上 ——
     //    那正是新链条里干活的会话。
     //    与此同时两条断言被**废弃**：
@@ -2277,7 +2277,7 @@ if (CONV) {
     // ══ N15. `/cancel 3` 现在只是普通正文（控制词已删）═════════════════
     //
     // 删掉关键词解析的**可观测后果**：这句话不再触发任何带外取消，
-    // 而是照常进常驻会话（由会话理解意图后调 qq_tasks）。
+    // 而是照常进常驻会话（由会话理解意图后调 shall_qq_tasks）。
     //
     // 一条断言在这里被**有意删掉**：「它没有被当成任务分诊提示」。
     // 原因：`/cancel 3` 只有 9 个字，既不是寒暄也不是提问，规则把它判成
@@ -2289,7 +2289,7 @@ if (CONV) {
     // 那条断言写成 `!includes('[分诊: 任务')` 是**永远为假**的错误判据
     // （`!` + `includes`），这里直接去掉，不留下一条假装在测东西的绿。
     {
-      // ⚠️ **需求变更**：旧版的对照组是"先用 `qq_dispatch` 派一条正在跑的任务"。
+      // ⚠️ **需求变更**：旧版的对照组是"先用 `shall_qq_dispatch` 派一条正在跑的任务"。
       //    现在没有任务会话可派，所以对照组换成**这条会话里的一个正在跑的回合** ——
       //    对照的语义没变：如果关键词路径还在，`/cancel 3` 会去取消它。
       const C15 = '20215'
@@ -2347,10 +2347,10 @@ if (CONV) {
     // 这是全设计里最容易踩、后果最贵的一处：`systemPrompt.context()` 的语义是
     // "文本变了才重注"（`dsh-agent-loop/lib/index.js:337`），
     // 渲染一不稳定，**每一步都会 append 一条新的 user 消息**。
-    v3Checks.push(['N7-a 常驻记忆已注册为 systemPrompt.context', contexts.has('dsh-whale-inurqq:resident-memory')])
+    v3Checks.push(['N7-a 常驻记忆已注册为 systemPrompt.context', contexts.has('shall:qq-memory')])
     v3Checks.push([
       'N7-b 注入顺序是 order=130（排在内置的沙箱/审批/子代理之后）',
-      contexts.get('dsh-whale-inurqq:resident-memory')?.order === 130,
+      contexts.get('shall:qq-memory')?.order === 130,
     ])
 
     // ══ N3 + N4 + N5. 阈值触发交班 ════════════════════════════════════
@@ -2555,7 +2555,7 @@ if (CONV) {
     const c1NewestRoot = (await fetchStatus())?.state?.chats?.[memScope]?.rootSessionId
     const c1Agent = { session: { id: c1NewestRoot }, id: c1NewestRoot }
     const asm1 = services.systemPrompt.assemble({ agent: c1Agent })
-    const snap1 = asm1.contexts.find((c) => c.name === 'dsh-whale-inurqq:resident-memory')?.text ?? ''
+    const snap1 = asm1.contexts.find((c) => c.name === 'shall:qq-memory')?.text ?? ''
     v3Checks.push(['N7-d 常驻记忆渲染出了内容', snap1.length > 0 && snap1.includes('[常驻记忆 v')])
     v3Checks.push(['N7-e 渲染里带稳定锚 [常驻记忆 vN]', /^\[常驻记忆 v\d+\]/.test(snap1)])
 
@@ -2563,7 +2563,7 @@ if (CONV) {
     let byteStable = true
     let firstDiff = ''
     for (let i = 0; i < 100; i += 1) {
-      const s = services.systemPrompt.assemble({ agent: c1Agent }).contexts.find((c) => c.name === 'dsh-whale-inurqq:resident-memory')?.text ?? ''
+      const s = services.systemPrompt.assemble({ agent: c1Agent }).contexts.find((c) => c.name === 'shall:qq-memory')?.text ?? ''
       if (s !== snap1) {
         byteStable = false
         firstDiff = `第 ${i + 1} 次不同：${JSON.stringify(s.slice(0, 80))}`
@@ -2577,7 +2577,7 @@ if (CONV) {
     let retained = null
     let appendedMessages = 0
     for (let step = 0; step < 2; step += 1) {
-      const snap = services.systemPrompt.assemble({ agent: c1Agent }).contexts.find((c) => c.name === 'dsh-whale-inurqq:resident-memory')?.text ?? ''
+      const snap = services.systemPrompt.assemble({ agent: c1Agent }).contexts.find((c) => c.name === 'shall:qq-memory')?.text ?? ''
       if (retained !== snap) {
         appendedMessages += 1
         retained = snap
@@ -2593,14 +2593,14 @@ if (CONV) {
 
     // 常驻记忆按 scope 分流：**不是这个 QQ 会话的**会话一律拿不到。
     //
-    // ⚠️ **需求变更**：旧版这条断言用的是 `qq_dispatch` 建出来的**任务会话**。
+    // ⚠️ **需求变更**：旧版这条断言用的是 `shall_qq_dispatch` 建出来的**任务会话**。
     //    现在没有任务会话，所以改用"另一个 QQ 会话的常驻会话"当反例 —— 判据
     //    （`ctx.agent.id → sessionId → scope` 的分流）测的是同一件事：不匹配就不注入。
     {
       const otherScopeSession = (await fetchStatus())?.state?.chats?.['group:30009']?.rootSessionId
       if (otherScopeSession) {
         const asmOther = services.systemPrompt.assemble({ agent: { session: { id: otherScopeSession }, id: otherScopeSession } })
-        const otherText = asmOther.contexts.find((c) => c.name === 'dsh-whale-inurqq:resident-memory')?.text ?? ''
+        const otherText = asmOther.contexts.find((c) => c.name === 'shall:qq-memory')?.text ?? ''
         v3Checks.push([
           'N7-i 别的 QQ 会话的记忆不会被注入到这台会话（按 ctx.agent.id 分流）',
           otherText === '' || !otherText.includes(`private:${C1}`),
@@ -2609,7 +2609,7 @@ if (CONV) {
       const asmUnknown = services.systemPrompt.assemble({ agent: { session: { id: 'sess-not-bound-to-any-chat' }, id: 'sess-not-bound-to-any-chat' } })
       v3Checks.push([
         'N7-j 不属于任何 QQ 会话的会话拿不到常驻记忆（返回空串）',
-        (asmUnknown.contexts.find((c) => c.name === 'dsh-whale-inurqq:resident-memory')?.text ?? '') === '',
+        (asmUnknown.contexts.find((c) => c.name === 'shall:qq-memory')?.text ?? '') === '',
       ])
     }
 
@@ -2659,7 +2659,7 @@ if (CONV) {
 
     // ══ 硬约束③：交班只动常驻会话，别的会话不被牵连 ═══════════════════
     //
-    // ⚠️ **需求变更**：旧版的对照物是 `qq_dispatch` 派出的**任务会话**。现在没有任务
+    // ⚠️ **需求变更**：旧版的对照物是 `shall_qq_dispatch` 派出的**任务会话**。现在没有任务
     //    会话，所以换成**另一个 QQ 会话的常驻会话** —— 判据测的是同一件事：
     //    交班换代只作用于被交班的那个 scope，别的会话既不被归档、映射也不被动。
     const C9 = '20209'
@@ -2696,9 +2696,9 @@ if (CONV) {
       promptsToOldC1 === c1PromptList.length && promptsToOldC9 <= 1,
     ])
 
-    // ══ qq_memory：碎片可查可删（隐私要求）═══════════════════════════
-    const memTool = registeredTools.get('qq_memory')
-    v3Checks.push(['隐私-a qq_memory 已注册（用户可查可删）', Boolean(memTool)])
+    // ══ shall_qq_memory：碎片可查可删（隐私要求）═══════════════════════════
+    const memTool = registeredTools.get('shall_qq_memory')
+    v3Checks.push(['隐私-a shall_qq_memory 已注册（用户可查可删）', Boolean(memTool)])
     if (memTool) {
       const listed = await memTool.execute({ chat_type: 'private', chat_id: C1, limit: 50 }, {})
       v3Checks.push(['隐私-b 能列出本会话的碎片', (listed?.fragments ?? []).length > 0 && listed?.scope === `private:${C1}`])
@@ -2884,8 +2884,8 @@ const lineageChecks = []
         !('tasks' in ((await fetchStatus()) ?? { tasks: 1 })),
     ])
       lineageChecks.push([
-        '常驻-8 默认路径不注册 qq_dispatch（派活给独立任务会话这件事不存在了）',
-        !registeredTools.has('qq_dispatch'),
+        '常驻-8 默认路径不注册 shall_qq_dispatch（派活给独立任务会话这件事不存在了）',
+        !registeredTools.has('shall_qq_dispatch'),
       ])
     }
 
@@ -3006,14 +3006,14 @@ const lineageChecks = []
 
     // ── 规则 4：进度靠问 —— 查证入口都还在 ───────────────────────────────
     lineageChecks.push([
-      '问进度-a qq_alive 仍然注册（问进度第一步：它还在不在）',
-      Boolean(registeredTools.get('qq_alive')),
+      '问进度-a shall_qq_alive 仍然注册（问进度第一步：它还在不在）',
+      Boolean(registeredTools.get('shall_qq_alive')),
     ])
     lineageChecks.push([
       CONV
-        ? '问进度-b qq_tasks 正常运行：默认路径报“没有独立任务台账”'
-        : '问进度-b qq_tasks 正常运行：v2 回滚路径下台账里真有任务（台账本身没被拆）',
-      Boolean(registeredTools.get('qq_tasks')) &&
+        ? '问进度-b shall_qq_tasks 正常运行：默认路径报“没有独立任务台账”'
+        : '问进度-b shall_qq_tasks 正常运行：v2 回滚路径下台账里真有任务（台账本身没被拆）',
+      Boolean(registeredTools.get('shall_qq_tasks')) &&
         (CONV
           ? (await listTasksOf('private', QC, 50)).length === 0
           : (await listTasksOf('private', qcChatId, 50)).length > 0),
@@ -3024,10 +3024,10 @@ const lineageChecks = []
         ? '问进度-c 前台约定里写明了"干活就在本会话里、没有别的任务会话"'
         : '问进度-c v2 回滚路径不注册前台约定（这是回滚的应有之义）',
       CONV
-        ? String(sections.get('dsh-whale-inurqq:front-desk')?.text?.({ agent: { session: { id: qcRootId } } }) ?? '').includes(
+        ? String(sections.get('shall:frontdesk')?.text?.({ agent: { session: { id: qcRootId } } }) ?? '').includes(
             '没有别的任务会话',
           )
-        : !sections.has('dsh-whale-inurqq:front-desk'),
+        : !sections.has('shall:frontdesk'),
     ])
 
     // ⚠️ 收尾必须把回合管理恢复成**不挂起**：后面的收尾段要让任务真的收敛并归档，
@@ -3053,7 +3053,7 @@ runChecks('新逻辑链条断言（规则 1—3）', lineageChecks)
 //   - 判定不能只看"有没有反证"（没有反证 ≠ 活着）
 //
 // 断的是受控客户端这条**真实 WebSocket**：断开后插件收到 close 事件、
-// 把连接从 `server.connections` 里摘掉，于是状态端点与 qq_alive 都必须翻成离线。
+// 把连接从 `server.connections` 里摘掉，于是状态端点与 shall_qq_alive 都必须翻成离线。
 // ⚠️ 这一段必须放在**最后**：断掉之后回传就没地方落了，后面不能再有依赖连接的断言。
 // ══════════════════════════════════════════════════════════════════════
 const offlineChecks = []
@@ -3135,18 +3135,18 @@ const offlineChecks = []
     ])
 
     // 工具侧必须与端点**同源**：模型拿到的也是"离线"，否则它会替插件编一句"在的"
-    const aliveTool2 = registeredTools.get('qq_alive')
+    const aliveTool2 = registeredTools.get('shall_qq_alive')
     if (aliveTool2) {
       const out = await aliveTool2.execute({}, {})
-      offlineChecks.push(['N14-f qq_alive 断开后同样报 alive=false（工具与端点不会分裂）', out?.alive === false])
+      offlineChecks.push(['N14-f shall_qq_alive 断开后同样报 alive=false（工具与端点不会分裂）', out?.alive === false])
       offlineChecks.push([
-        'N14-g qq_alive 在离线时给出了具体依据（reasons 非空）',
+        'N14-g shall_qq_alive 在离线时给出了具体依据（reasons 非空）',
         (out?.reasons ?? []).length > 0 && String(out?.because ?? '').length > 0,
       ])
       offlineChecks.push(['N14-h 离线时的渲染明确写「不活着」', String(aliveTool2.output?.render({}, out)?.[0]?.text ?? '').includes('不活着')])
     }
     const tk2 = await tasksTool.execute({}, {})
-    offlineChecks.push(['N14-i qq_tasks 也带上了离线判定（问进度时先被拦住）', tk2?.alive?.alive === false])
+    offlineChecks.push(['N14-i shall_qq_tasks 也带上了离线判定（问进度时先被拦住）', tk2?.alive?.alive === false])
   } catch (err) {
     offlineChecks.push([`N14 断开实测抛错: ${err.stack ?? err.message}`, false])
   }
