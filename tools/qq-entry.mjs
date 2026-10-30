@@ -34,7 +34,7 @@ import { WebSocket } from 'ws'
 import { createLogger } from '../lib/core/log.js'
 import { classifyMessage, shouldRespond, isAmbiguousAsk, taskHint, CLASSIFY } from '../lib/qq/classify.js'
 import { assessSessionWork } from '../lib/conversation/pending.js'
-import { judgeAlive, probeTasks, LOOP_STALL_MS, EVENT_SILENCE_MS } from '../lib/qq/alive.js'
+import { judgeAlive, LOOP_STALL_MS, EVENT_SILENCE_MS } from '../lib/qq/alive.js'
 import { fragmentOf } from '../lib/conversation/chat-memory.js'
 import { filePathFromToolCall, filesFromPresented, userMessageFromEvent } from '../lib/conversation/relay.js'
 
@@ -1431,21 +1431,8 @@ try {
     String(judgeAlive({ serverReady: true, connections: [], now: 1, lastTickAt: 1 }).evidence.note ?? '').includes('不是'),
   ])
   classifyChecks.push([
-    '任务侧存活：台账说在跑但会话已不在 agents 里 → tasks.verdict=dead（且它不参与 alive）',
-    (() => {
-      const v = probeTasks({
-        getAgent: (id) => (id === 's1' ? { status: 'idle' } : undefined),
-        tasks: [
-          { no: 1, status: 'running', sessionId: 's1' },
-          { no: 2, status: 'running', sessionId: 'gone' },
-        ],
-      })
-      return v.verdict === 'dead' && v.dead.length === 1 && v.dead[0].no === 2
-    })(),
-  ])
-  classifyChecks.push([
-    '任务侧存活：查不到 agents 服务时说"问不到"（unknown），不谎报 ok 也不谎报 dead',
-    probeTasks({ getAgent: undefined, tasks: [{ no: 1, status: 'running', sessionId: 's1' }] }).verdict === 'unknown',
+    '存活判定只看通道和自身（任务台账已删，alive 不再带 tasks 一项）',
+    !('tasks' in judgeAlive({ serverReady: true, connections: [], now: 1, lastTickAt: 1 })),
   ])
 
   // ── 回传里的"它动了什么"：从工具调用提取路径（必须只认写操作）──────────
@@ -1559,11 +1546,9 @@ if (guards.length > 0) {
   const denied = guards[0]({ name: 'shall_qq_send', arguments: { chat_type: 'group', chat_id: '99999', text: 'x' } })
   const allowed = guards[0]({ name: 'shall_qq_send', arguments: { chat_type: 'private', chat_id: '20002', text: 'x' } })
   const unrelated = guards[0]({ name: 'read', arguments: {} })
-  const tasksGuard = guards[0]({ name: 'shall_qq_tasks', arguments: { chat_type: 'group', chat_id: '99999' } })
   toolChecks.push(['门控拒绝被屏蔽的群', typeof denied === 'string'])
   toolChecks.push(['门控放行范围内的私聊', allowed === undefined])
   toolChecks.push(['门控不干预其他工具', unrelated === undefined])
-  toolChecks.push(['门控不干预只读的 shall_qq_tasks', tasksGuard === undefined])
 }
 runChecks('工具断言', toolChecks)
 
@@ -1676,11 +1661,15 @@ async function fetchStatus() {
   return await res.json()
 }
 
-/** 通过 shall_qq_tasks 工具读台账（这正是常驻会话能看到的视角） */
-async function listTasksOf(chatType, chatId, limit = 20) {
-  if (!tasksTool) return []
-  const out = await tasksTool.execute({ chat_type: chatType, chat_id: chatId, limit }, OWNER_EXEC)
-  return out?.tasks ?? []
+/** 任务台账已删：状态文件里不该再有任何任务记录（tasks 字段、会话上的 taskIds） */
+async function listTasksOf(chatType, chatId) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(STATE_DIR, 'state.json'), 'utf8'))
+    const chat = raw?.chats?.[`${chatType}:${chatId}`] ?? {}
+    return [...Object.values(raw?.tasks ?? {}), ...(Array.isArray(chat.taskIds) ? chat.taskIds : [])]
+  } catch {
+    return []
+  }
 }
 
 /** 受控客户端：扮演第二个 OneBot 协议端，事件时序由断言代码决定 */
@@ -2991,13 +2980,8 @@ const lineageChecks = []
       Boolean(registeredTools.get('shall_qq_alive')),
     ])
     lineageChecks.push([
-      CONV
-        ? '问进度-b 不再注册 shall_qq_tasks，也没有任务台账'
-        : '问进度-b shall_qq_tasks 正常运行：v2 回滚路径下台账里真有任务（台账本身没被拆）',
-      !registeredTools.get('shall_qq_tasks') &&
-        (CONV
-          ? (await listTasksOf('private', QC, 50)).length === 0
-          : (await listTasksOf('private', qcChatId, 50)).length > 0),
+      '问进度-b 不再注册 shall_qq_tasks，状态文件里也没有任务台账',
+      !registeredTools.get('shall_qq_tasks') && (await listTasksOf('private', QC)).length === 0,
     ])
     // 前台约定只对**常驻对接会话**渲染；关掉开关时它根本不注册（回滚到 v2 也没有“前台”这个角色）。
     lineageChecks.push([
