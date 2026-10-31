@@ -9,6 +9,7 @@ import { resolveGroupConfig, settingsForGroup, inQuietHours, GROUP_DEFAULTS } fr
 import { createGroupSettings } from '../lib/group/settings.js'
 import { classifyClosing, closingHint } from '../lib/group/closure.js'
 import { parseJudgeReply, thresholdFor, createJudge, buildJudgePrompt } from '../lib/group/judge.js'
+import { createCheapModel } from '../lib/core/cheap-model.js'
 import { GroupEngine, GROUP_REJECT_NOTE } from '../lib/group/engine.js'
 import { InterjectFeedback } from '../lib/group/feedback.js'
 import { createMemory } from '../lib/memory/index.js'
@@ -60,7 +61,7 @@ console.log('A. 配置')
 {
   const c = resolveGroupConfig({})
   check('默认档位是点名', c.defaultMode === 'mention')
-  check('判断模型默认 deepseek-official/deepseek-flash', c.judge.provider === 'deepseek-official' && c.judge.model === 'deepseek-flash')
+  check('判断模型默认：provider 跟宿主、模型 deepseek-flash', c.judge.provider === '' && c.judge.model === 'deepseek-flash')
   check('精力默认值照天使之心', c.energy.initial === 100 && c.energy.floor === -100 && c.energy.recoverPerSec === 0.6 && c.energy.base === 14 && c.energy.perChar === 0.12)
   check('默认没有警告', c.warnings.length === 0)
   check('默认值是冻结的，改不到', Object.isFrozen(GROUP_DEFAULTS) && Object.isFrozen(GROUP_DEFAULTS.energy))
@@ -207,6 +208,63 @@ console.log('D. 判断模型')
   judge = make(async () => ({ text: good }), { provider: '', model: '', timeoutMs: 1000 }, null)
   r = await judge({ recent: [], threshold: 6 })
   check('没配置也没有宿主默认模型：不回', !r.respond && r.error)
+}
+
+console.log('D2. 便宜模型跟宿主的 provider（桌面端账号登录没有 API key）')
+{
+  // 宿主：默认选择还写着 deepseek-official（没有 API key），正在跑的会话用的是 deepseek-account
+  const fakeRoot = ({ sessions = [], def = null, routes = [] } = {}) => ({
+    get: (name) => {
+      if (name === 'agents') return { list: () => sessions.map(([provider, model, status = 'running']) => ({ status, session: { requestContext: () => ({ provider, model }) } })) }
+      if (name === 'agentDefaultModel') return { currentSelection: () => def }
+      if (name === 'llm') return { listProviders: () => routes.map((id) => ({ id, name: id })) }
+      return undefined
+    },
+  })
+  const noKey = (input) => {
+    if (input.provider === 'deepseek-official') throw new Error('LLM 调用失败: llm-deepseek: no API key for provider route "deepseek-official"')
+    return { text: 'ok' }
+  }
+  const build = ({ root, config = { provider: '', model: 'deepseek-flash', timeoutMs: 1000 }, impl = noKey, clock = new FakeClock() }) => {
+    const calls = []
+    const model = createCheapModel({
+      llm: () => null, root: () => root, config: () => config, now: clock.now,
+      call: async (_llm, input) => { calls.push(`${input.provider}/${input.model}`); return impl(input) },
+    })
+    return { model, calls, clock }
+  }
+  const desktop = fakeRoot({ sessions: [['deepseek-account', 'deepseek-v4-pro']], def: { provider: 'deepseek-official', model: 'deepseek-flash' }, routes: ['deepseek-official', 'deepseek-account'] })
+
+  let t = build({ root: desktop })
+  check('provider 留空：先用会话正在用的 provider，模型照配置', t.model.status().target?.provider === 'deepseek-account' && t.model.status().target?.model === 'deepseek-flash')
+  await t.model.run({ user: 'x' })
+  check('第一次就打到 deepseek-account/deepseek-flash，不去碰没有 key 的线路', t.calls.join(',') === 'deepseek-account/deepseek-flash' && t.model.status().using === 'configured' && t.model.status().note === '')
+
+  t = build({ root: desktop, config: { provider: 'deepseek-official', model: 'deepseek-flash', timeoutMs: 1000 } })
+  await t.model.run({ user: 'x' })
+  check('写死 deepseek-official 又没有 key：换另一条 DeepSeek 线路，模型不变', t.calls.join(',') === 'deepseek-official/deepseek-flash,deepseek-account/deepseek-flash')
+  const st = t.model.status()
+  check('状态说明改用了谁、为什么', st.using === 'fallback' && st.note.includes('deepseek-official/deepseek-flash 不可用') && st.note.includes('no API key') && st.note.includes('deepseek-account/deepseek-flash'))
+  await t.model.run({ user: 'x' })
+  check('5 分钟内不再试用不了的线路', t.calls.at(-1) === 'deepseek-account/deepseek-flash' && t.calls.length === 3)
+  await t.clock.advance(5 * 60 * 1000 + 1)
+  await t.model.run({ user: 'x' })
+  check('5 分钟后再试一次配置的线路', t.calls.at(-2) === 'deepseek-official/deepseek-flash')
+
+  t = build({ root: fakeRoot({ def: { provider: 'deepseek-official', model: 'deepseek-flash' }, routes: ['deepseek-official', 'deepseek-account', 'openai'] }) })
+  await t.model.run({ user: 'x' })
+  check('没有会话在跑：先按默认选择的 provider，失败了换 DeepSeek 线路', t.calls.join(',') === 'deepseek-official/deepseek-flash,deepseek-account/deepseek-flash')
+  check('不去试别家的线路', !t.model.status().candidates.some((c) => c.startsWith('openai/')))
+
+  let aborted = 0
+  t = build({ root: desktop, impl: () => { aborted += 1; throw new Error('LLM 调用被中止: DeepSeek Messages request aborted') } })
+  check('超时：这次报错，但不换模型重等', await t.model.run({ user: 'x' }).then(() => false, (e) => e.message.includes('超时')) && aborted === 1)
+  check('超时不算不可用，下次照样先试它', t.model.status().using !== 'unavailable' && t.model.status().timeouts === 1 && t.model.status().target?.provider === 'deepseek-account')
+
+  t = build({ root: desktop, impl: () => { throw new Error('LLM 调用失败: 账号没登录') } })
+  check('全都用不了：报错', await t.model.run({ user: 'x' }).then(() => false, () => true) && t.model.status().using === 'unavailable')
+  const before = t.calls.length
+  check('全都用不了之后 5 分钟内直接报错，不再逐个试', await t.model.run({ user: 'x' }).then(() => false, (e) => e.message.includes('不再试')) && t.calls.length === before)
 }
 
 // ── 引擎 ─────────────────────────────────────────────────────────────
@@ -601,6 +659,80 @@ console.log('L. 连续不开口提醒与状态快照')
   s.send('销毁之后')
   await s.clock.advance(5000)
   check('销毁后不再产生决定', s.decisions.length === 1)
+}
+
+console.log('M. 盯群档：攒一小批交给主模型看')
+{
+  const t = setup({ mode: 'watch' })
+  const looks = () => t.decisions.filter((d) => d.reason === 'watch-look')
+  t.send('今天好冷', { senderId: '10001', senderName: '甲' })
+  t.send('是啊', { senderId: '10002', senderName: '乙' })
+  check('没被叫到：先等群里安静（不立即回）', t.decisions.length === 0)
+  await t.clock.advance(4100)
+  check('安静之后看一眼：两条整批交出去，不经过便宜模型', looks().length === 1 && looks()[0].batch.length === 2 && looks()[0].batch[0].text === '今天好冷' && t.judgeCalls.length === 0)
+  check('看一眼的决定带 mode=watch、条数，不指定触发人', looks()[0].mode === 'watch' && looks()[0].count === 2 && looks()[0].senderId === '')
+
+  t.send('第三句')
+  await t.clock.advance(4100)
+  check('上一轮还没回完：先不送（不叠着送）', looks().length === 1)
+  t.engine.noteTurnOutcome(G, { spoke: false })
+  await t.clock.advance(30000)
+  check('回完之后补看回合期间攒下的', looks().length === 2 && looks()[1].batch.length === 1 && looks()[1].batch[0].text === '第三句')
+  t.engine.noteTurnOutcome(G, { spoke: false })
+
+  t.send('第四句')
+  await t.clock.advance(4100)
+  check('离上次看群不到 30 秒：推迟到满 30 秒', looks().length === 2)
+  await t.clock.advance(30000)
+  check('到点了再看', looks().length === 3 && looks()[2].batch.map((e) => e.text).join() === '第四句')
+  t.engine.noteTurnOutcome(G, { spoke: true })
+
+  t.send('小鲸在吗', { addressed: 'at' })
+  check('被叫到：照常立刻回', t.decisions.length === 3 && t.engine.snapshot(G).turnOpen === true)
+  t.send('插一句')
+  await t.clock.advance(40000)
+  check('被叫到那一轮没结束：盯群也等着', looks().length === 3)
+  t.engine.noteTurnOutcome(G, { spoke: true })
+  await t.clock.advance(31000)
+  check('那一轮结束后接着看，被叫到的那条已经给过就不再带', looks().length === 4 && looks()[3].batch.map((e) => e.text).join() === '插一句')
+  t.engine.noteTurnOutcome(G, { spoke: false })
+
+  check('盯群档不提醒“连续几次没开口”', (() => {
+    for (let i = 0; i < 10; i += 1) t.engine.noteTurnOutcome(G, { spoke: false })
+    return t.engine.reminderFor(G) === ''
+  })())
+
+  const b = setup({ mode: 'watch', group: { watch: { messages: 3, chars: 3000, minIntervalMs: 5000, perHour: 2 } } })
+  for (let i = 1; i <= 5; i += 1) b.send(`消息${i}`, { senderId: `1000${i}` })
+  b.send('/help', { isCommand: true })
+  b.send('我是另一个 bot', { fromBot: true, senderId: '20000' })
+  await b.clock.advance(4100)
+  const first = b.decisions.find((d) => d.reason === 'watch-look')
+  check('一批最多带 N 条，留最新的并说明省略了几条；命令和别的 bot 的话不带', first?.batch.map((e) => e.text).join() === '消息3,消息4,消息5' && first.skipped === 2)
+  b.engine.noteTurnOutcome(G, { spoke: false })
+  b.send('又一条')
+  await b.clock.advance(6000)
+  b.engine.noteTurnOutcome(G, { spoke: false })
+  b.send('再一条')
+  await b.clock.advance(6000)
+  check('每小时看群有上限', b.decisions.filter((d) => d.reason === 'watch-look').length === 2 && b.decisions.at(-1).reason === 'watch-limit')
+
+  const c = setup({ mode: 'watch', withMemory: true })
+  c.engine.ignoreSender('555', '10009', '嫌烦')
+  c.send('别理我', { senderId: '10009', senderName: '丙' })
+  await c.clock.advance(4100)
+  check('只有不想被主动搭话的人在说：不看', !c.decisions.some((x) => x.reason === 'watch-look'))
+  c.send('我觉得可以试试', { senderId: '10001' })
+  await c.clock.advance(4100)
+  const look = c.decisions.find((d) => d.reason === 'watch-look')
+  check('别人一开口：他的话照样带上（别人在跟他聊），但标出来', look?.batch.find((e) => e.senderId === '10009')?.ignored === true && look.batch.find((e) => e.senderId === '10001')?.ignored === false)
+
+  const d = setup({ mode: 'watch' })
+  d.send('好的谢谢')
+  await d.clock.advance(4100)
+  check('对方在收尾：不看', !d.decisions.some((x) => x.reason === 'watch-look'))
+  const snap = t.engine.snapshot(G)
+  check('快照：最近一小时看群次数、上次看群时间', snap.looksLastHour === 4 && snap.lastLookAt > 0)
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)

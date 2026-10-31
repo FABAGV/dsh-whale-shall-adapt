@@ -36,7 +36,13 @@ const qqConfig = resolveConfig({ scope: { groups: [String(QQ_GROUP), '30004'], f
 const engine = new GroupEngine({ config: qqConfig.group, settings: groupSettings, memory, botName: () => '小鲸' })
 const signals = createSignals()
 const qqStatus = createQqStatus()
-const judge = Object.assign(async () => ({}), { status: () => ({ using: 'fallback', provider: 'host', model: 'default', note: '配置的模型 deepseek-official/deepseek-flash 不可用，改用宿主默认模型 host/default', lastError: '' }) })
+const judge = Object.assign(async () => ({}), {
+  status: () => ({
+    using: 'fallback', provider: 'host', model: 'default', note: 'deepseek-account/deepseek-flash 不可用（账号没登录），改用宿主默认模型 host/default；5 分钟后再试 deepseek-account/deepseek-flash', lastError: '',
+    target: { provider: 'deepseek-account', model: 'deepseek-flash', source: 'host-provider' },
+    candidates: ['deepseek-account/deepseek-flash', 'deepseek-official/deepseek-flash', 'host/default'],
+  }),
+})
 qqStatus.provide('group', { engine, settings: groupSettings, judge, corpus: { purgeMember: () => 0 }, qqConfig })
 groupSettings.noteSeen('30077', '摄影交流群')
 groupSettings.noteSeen('30077')

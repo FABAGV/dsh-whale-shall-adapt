@@ -35,6 +35,9 @@ console.log('A. 提交的 bundle 是最新的')
   check('拼出来的是合法 JS', (() => { try { new Function(text); return true } catch { return false } })())
   check('没有单段超过 500 行（超了就再切）', names.every((n) => fs.readFileSync(path.join(PARTS_DIR, n), 'utf8').split('\n').length <= 500),
     names.map((n) => [n, fs.readFileSync(path.join(PARTS_DIR, n), 'utf8').split('\n').length]).filter(([, l]) => l > 500).join(', '))
+  // 设置页带的凭据头名不对时，预检不放行，浏览器只报 Failed to fetch（设置页显示“未连接宿主”）
+  const { AUTH_HEADER } = await import('../lib/ui/http.js')
+  check('设置页带的凭据头就是服务端认的那个（x-shall-token）', text.includes(`options.headers["${AUTH_HEADER}"] = injected.token`) && !/Prompt-Adapt-Token/i.test(text))
 }
 
 console.log('B. 分段的规矩')

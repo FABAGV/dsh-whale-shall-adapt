@@ -33,7 +33,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { WebSocket } from 'ws'
 import { createLogger } from '../lib/core/log.js'
-import { classifyMessage, shouldRespond, isAmbiguousAsk, taskHint, CLASSIFY } from '../lib/qq/classify.js'
+import { classifyMessage, shouldRespond, CLASSIFY } from '../lib/qq/classify.js'
 import { assessSessionWork } from '../lib/conversation/pending.js'
 import { judgeAlive, LOOP_STALL_MS, EVENT_SILENCE_MS } from '../lib/qq/alive.js'
 import { fragmentOf } from '../lib/conversation/chat-memory.js'
@@ -1361,26 +1361,6 @@ try {
       !Object.values(CLASSIFY).includes('control'),
   ])
 
-  // ── 含糊判据（决定提示措辞：先追问 还是 直接派）────────────────────────
-  classifyChecks.push(['含糊判据：「这个月的采集日志」缺对象 → 该先追问', isAmbiguousAsk('帮我把这个月的采集日志按周汇总，输出一份周报') === true])
-  classifyChecks.push(['含糊判据：「这个目录下的历史产物」缺对象 → 该先追问', isAmbiguousAsk('顺便把这个目录下的历史产物清一遍') === true])
-  classifyChecks.push(['含糊判据：「A 目录的图片转 webp」意图明确 → 不该问，直接派', isAmbiguousAsk('帮我把 A 目录的图片转成 webp') === false])
-  classifyChecks.push([
-    '含糊判据：指代 + 具体文件名（前面已给落点）→ 不算含糊',
-    isAmbiguousAsk('把刚才那份 report.md 里的失败用例挑出来') === false,
-  ])
-  classifyChecks.push([
-    '含糊提示要求"先追问、一次只问一个、别先派活"',
-    taskHint(CLASSIFY.TASK, 'default', '帮我把这个月的采集日志按周汇总').includes('先') &&
-      taskHint(CLASSIFY.TASK, 'default', '帮我把这个月的采集日志按周汇总').includes('待澄清') &&
-      taskHint(CLASSIFY.TASK, 'default', '帮我把这个月的采集日志按周汇总').includes('追问'),
-  ])
-  classifyChecks.push([
-    '意图明确时的提示**不要求**追问（否则就变成"永远先问一遍"）',
-    !taskHint(CLASSIFY.TASK, 'default', '帮我把 A 目录的图片转成 webp').includes('待澄清'),
-  ])
-  classifyChecks.push(['闲聊/任务前缀不追加任何分诊提示', taskHint(CLASSIFY.CHAT, 'short-chitchat', '在吗') === ''])
-
   // ── 存活判定的纯逻辑（断开必须判死，不许瞎报活着）──────────────────────
   const connUp = { closed: false, socketOpen: true, lastEventAt: 50_000, connectedAt: 40_000, selfId: '9' }
   classifyChecks.push([
@@ -1993,11 +1973,10 @@ if (CONV) {
     v3Checks.push(['N1-a 常驻对话会话已建起来', Boolean(c1Session)])
     v3Checks.push(['N1-b 任务消息进了常驻会话（有投递）', c1PromptList.length > 0])
     v3Checks.push([
-      // ⚠️ 判据用 `[分诊: 任务` 而不是 `[分诊: 任务]`：含糊时标记是
-      //    `[分诊: 任务·待澄清]`（前缀相同、后缀不同），写死右括号会把
-      //    "该追问"的那一类判成失败 —— 而它恰恰是最该保留的一类。
-      'N1-c 常驻会话的投递正文带 [分诊: 任务] 提示',
-      c1PromptList.some((p) => String(p.text ?? '').includes('[分诊: 任务')),
+      // 规则判成"像任务"只进日志：正文照原文给常驻会话，要不要先问由它自己按系统提示判断
+      'N1-c 常驻会话的投递正文是原文，不附规则分类的标注',
+      c1PromptList.some((p) => String(p.text ?? '').includes('按周汇总')) &&
+        !c1PromptList.some((p) => String(p.text ?? '').includes('[分诊')),
     ])
     v3Checks.push([
       'N1-d TaskScheduler 未收到 submit（分诊权真的移交了）',
@@ -2409,17 +2388,7 @@ if (CONV) {
     // ══ N15. `/cancel 3` 现在只是普通正文（控制词已删）═════════════════
     //
     // 删掉关键词解析的**可观测后果**：这句话不再触发任何带外取消，
-    // 而是照常进常驻会话（由会话理解意图后调 shall_qq_tasks）。
-    //
-    // 一条断言在这里被**有意删掉**：「它没有被当成任务分诊提示」。
-    // 原因：`/cancel 3` 只有 9 个字，既不是寒暄也不是提问，规则把它判成
-    // `reason=default` 的**任务候选**（与"不确定判成任务"的取舍一致），
-    // 所以它确实会带 `[分诊: 任务]` —— 而那个提示的措辞是
-    // "如果你觉得这只是闲聊或提问，直接回答即可，不必派活"。
-    // 也就是说：提示本身已经允许会话把它理解成取消意图，
-    // 硬要求"不带任务标记"反而与保留的规则自相矛盾。
-    // 那条断言写成 `!includes('[分诊: 任务')` 是**永远为假**的错误判据
-    // （`!` + `includes`），这里直接去掉，不留下一条假装在测东西的绿。
+    // 而是照原文进常驻会话（由会话自己理解意图）。
     {
       // ⚠️ **需求变更**：旧版的对照组是"先用 `shall_qq_dispatch` 派一条正在跑的任务"。
       //    现在没有任务会话可派，所以对照组换成**这条会话里的一个正在跑的回合** ——

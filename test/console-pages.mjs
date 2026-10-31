@@ -82,7 +82,13 @@ const memory = createMemory({ dir: path.join(dir, 'memory') })
 const groupSettings = createGroupSettings({ dir })
 const qqConfig = resolveConfig({ scope: { groups: ['555'], friends: [] } })
 const engine = new GroupEngine({ config: qqConfig.group, settings: groupSettings, memory, log })
-const judge = Object.assign(async () => ({}), { status: () => ({ using: 'fallback', provider: 'host', model: 'default', note: '配置的模型不可用，改用宿主默认模型 host/default', lastError: '' }) })
+const judge = Object.assign(async () => ({}), {
+  status: () => ({
+    using: 'fallback', provider: 'host', model: 'default', note: 'deepseek-account/deepseek-flash 不可用，改用宿主默认模型 host/default', lastError: '',
+    target: { provider: 'deepseek-account', model: 'deepseek-flash', source: 'host-provider' },
+    candidates: ['deepseek-account/deepseek-flash', 'deepseek-official/deepseek-flash', 'host/default'],
+  }),
+})
 const qqStatus = createQqStatus()
 qqStatus.provide('group', { engine, settings: groupSettings, judge, corpus: { purgeMember: () => 0 }, qqConfig })
 const outreach = createOutreach({ dir, config: {}, memory, owner: { owner: () => '42' }, log, rand: () => 0.5, isConnected: () => true, isBusy: async () => ({ busy: false }), deliver: async () => {} })
@@ -115,7 +121,8 @@ console.log('A. 群聊页')
   groupSettings.noteSeen('888', '新拉进来的群')
   let view = await run(renderGroup)
   let text = textOf(view)
-  check('页面建出来了，标题和判断模型状态在', text.includes('群聊') && text.includes('已退回宿主默认模型') && text.includes('host/default'))
+  check('页面建出来了，标题和判断模型状态在', text.includes('群聊') && text.includes('已改用备用模型') && text.includes('host/default'))
+  check('provider 跟着宿主时写明实际落到哪', text.includes('deepseek-account/deepseek-flash（provider 跟着宿主）') && text.includes('依次改用：deepseek-official/deepseek-flash'))
   check('配置里写的群（已接入）和见过的群（没接入）都在', text.includes('群 555') && text.includes('已接入') && text.includes('群 888（新拉进来的群）') && text.includes('没接入'))
   check('没接入的群只给“接入”按钮，不给调参', buttons(view, '接入这个群').length === 1 && !text.includes('静默时段') === false)
   const admit = buttons(view, '接入这个群')[0]
@@ -130,7 +137,7 @@ console.log('A. 群聊页')
   confirmAnswer = true
 
   const selects = byTag(view, 'select')
-  check('已接入的群有档位下拉，四个选项，默认选“点名”', selects.length >= 1 && selects[0].childNodes.length === 4 && selects[0].value === 'mention')
+  check('已接入的群有档位下拉，五个选项（含盯群），默认选“点名”', selects.length >= 1 && selects[0].childNodes.length === 5 && selects[0].value === 'mention')
   const modeSelect = selects[0]
   modeSelect.value = 'active'
   await modeSelect.fire('change')

@@ -12,7 +12,7 @@
 | 宿主 HTTP 前缀 | `/shall/api/`（设置页；控制台的接口见第 9 节） |
 | QQ 体检 | 控制台的 QQ 页（`GET /api/qq/health`，登录后）；OneBot 端口上只有不带身份信息的 `/shall/qq/health` |
 | 桌面端凭据头 / 页面注入全局 | `x-shall-token` / `__DSH_SHALL__` |
-| 工具 | `shall_qq_send`、`shall_qq_history`、`shall_qq_summary`、`shall_qq_chats`、`shall_qq_alive`、`shall_qq_memory`、`shall_memory_recall`、`shall_meme_lookup` |
+| 工具 | `shall_qq_send`、`shall_qq_send_image`（一条一张图，只发表情包目录 `$DSH_HOME/shall/meme/stickers` 或本会话工作区里的图）、`shall_qq_history`、`shall_qq_summary`、`shall_qq_chats`、`shall_qq_alive`、`shall_qq_memory`、`shall_memory_recall`、`shall_meme_lookup` |
 | 系统提示段 | `shall:frontdesk`(10)、`shall:profile`(30)、`shall:persona`(31)；上下文快照 `shall:qq-memory`(130) |
 | 技能来源 / 技能名前缀 | `shall` / `shall-` |
 | 凭据名 | `SHALL_ONEBOT_TOKEN` |
@@ -62,8 +62,9 @@ qq:
   advanced:     { dedupeWindowMs, dedupeMaxEntries, relayFlushMs, stateDir }
 # ── 群聊回复决策（第 8 节）
 group:
-  defaultMode: mention              # silent | mention | present | active
-  judge:       { provider: deepseek-official, model: deepseek-flash, timeoutMs: 15000 }
+  defaultMode: mention              # silent | mention | present | active | watch
+  watch:       { minIntervalMs: 30000, perHour: 40, messages: 30, chars: 3000 }
+  judge:       { provider: '', model: deepseek-flash, timeoutMs: 15000 }   # provider 留空 = 跟宿主在用的 provider
   eagerness: 0.5
   present:     { minutes: 8, messages: 12 }
   timing:      { quietMs: 4000, maxWaitMs: 20000 }
@@ -320,14 +321,18 @@ engine.noteRecall(chatKey, messageId, { operatorIsBot }) / engine.noteBan(chatKe
 engine.settingsFor(groupId) / engine.snapshot(chatKey?) / engine.ignoreSender(groupId, qq, reason)
 ```
 
-四档（默认 `mention`）：`silent` 只记录；`mention` 被叫到才回；`present` 点名之后，被它回复过的人 `present.minutes` 分钟或 `present.messages` 条之内接着说可以不再 @；
-`active` 没人叫也可能插话。五层，前四层不调模型：
+五档（默认 `mention`）：`silent` 只记录；`mention` 被叫到才回；`present` 点名之后，被它回复过的人 `present.minutes` 分钟或 `present.messages` 条之内接着说可以不再 @；
+`active` 没人叫也可能插话；`watch` 盯群：等时机之后，把还没给常驻会话看过的群消息（不含命令、别的 bot 和已经单独交过的点名消息，最多 `watch.messages` 条 / `watch.chars` 字）整批交给常驻会话，
+由主模型自己决定接不接（不调便宜模型）。两次看群至少隔 `watch.minIntervalMs`、每小时最多 `watch.perHour` 次，主动说话另受 `budget.perHour` 约束；常驻会话还在回上一轮（包括被叫到的那一轮）时不叠着送，回完再看；
+看群那一轮默认不引用、不 @，要接哪条由模型写 `<quote id/>`；“连续几次没开口”的提醒在盯群档不发。五层，前四层不调模型：
 
 1. **硬规则**：潜水档不回；被叫到的一律回（同一个人 60 秒内最多 6 次，另一个 bot 连环 @ 10 分钟内最多响应 2 次）；没被叫到时，命令消息、只 @ 了别人、别的 bot 说的、静默时段、被禁言、被绕开的人、对话已收尾，都不接。
 2. **在场状态**：见上。对方在在场期间说了附和/道别（“好的谢谢”“晚安”）就收尾，`closureMs`（默认 20 分钟）内不靠在场状态或概率插话；被叫到照常回，只是提示里带一句“对方像是在收尾”。
 3. **等时机**：没被叫到的先等群里安静 `timing.quietMs`；新消息替换触发点；同一个群同一时间只排一次、只跑一次判断。
 4. **预算**：精力（发言扣 `base + 字数 × perChar`，乘 `1.5 − eagerness`，按时间恢复）、两次发言的最短间隔、每小时主动插话上限、对话疲劳（连续主动聊久了门槛升高）。被叫到时跳过。
-5. **判断**（只在 `active`）：便宜模型（默认 `deepseek-official/deepseek-flash`，不可用时退回宿主默认模型并在控制台说明）按五个维度打分（相关 25%、意愿 20%、社交适宜 20%、时机 15%、连贯 20%）。
+5. **判断**（只在 `active`）：便宜模型按五个维度打分（相关 25%、意愿 20%、社交适宜 20%、时机 15%、连贯 20%）。
+   模型默认是宿主在用的 provider 下的 `deepseek-flash`：provider 先取正在跑的会话实际在用的（桌面端账号登录是 `deepseek-account`），再取宿主默认模型选择里的；
+   用不了就依次换宿主注册的其他 `deepseek-*` 线路（模型名不变）、会话在用的模型、宿主默认模型，控制台写明改用了谁、为什么。用不了的模型 5 分钟内不再试；超时只算这次慢，不换模型。
    JSON 严格校验，格式不对、超时、模型不可用都当“不回”。阈值 `8 − 3.5 × eagerness`，再加疲劳和历史反馈的调整（最近被嫌弃比例高 +1.5，经常被接住 −0.5，群记忆里有“这个群不喜欢 bot 主动搭话” +1）。
 
 插话反馈（`lib/group/feedback.js`）：主动插话后 5 分钟内，有人回复/@ 它 = `engaged`；说“闭嘴 / 没问你”（要出现在插话后的前 3 条消息里，或明确对 bot 说）、消息被别人撤回 = `rejected`；

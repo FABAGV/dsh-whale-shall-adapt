@@ -39,7 +39,7 @@ const qqConfig = resolveConfig({ scope: { groups: ['555'], friends: [], blockedG
 const engine = new GroupEngine({ config: qqConfig.group, settings: groupSettings, memory, log })
 const purged = []
 const corpus = { purgeMember: (...args) => { purged.push(args); return 7 } }
-const judge = Object.assign(async () => ({}), { status: () => ({ using: 'configured', provider: 'deepseek-official', model: 'deepseek-flash', note: '' }) })
+const judge = Object.assign(async () => ({}), { status: () => ({ using: 'configured', provider: 'deepseek-account', model: 'deepseek-flash', note: '' }) })
 const qqStatus = createQqStatus()
 const signals = createSignals()
 const meme = createMemeBase({ dbPath: path.join(dir, 'meme', 'memes.db'), memory, settingsFile: path.join(dir, 'meme', 'settings.json'), log })
@@ -75,7 +75,8 @@ console.log('B. 群聊页')
   check('黑名单里的群标出来，哪怕有人打开也不在范围', rows['777'].blocked && !rows['777'].inScope)
   check('见过的群带名字和条数，不带任何内容', rows['888'].name === '陌生群' && rows['888'].seenCount === 2 && !JSON.stringify(rows['888']).includes('聊聊'))
   check('带每个群的引擎状态（最近的决定）和插话统计', rows['555'].engine.decisions.length === 1 && rows['555'].engine.decisions[0].reason === 'called:at' && rows['555'].interjects.total === 0)
-  check('默认档位、四档说明、判断模型状态', r.json.defaultMode === 'mention' && r.json.modes.length === 4 && r.json.judge.status.model === 'deepseek-flash' && r.json.judge.config.provider === 'deepseek-official')
+  check('默认档位、五档说明（含盯群）、判断模型状态（provider 默认留空 = 跟宿主）', r.json.defaultMode === 'mention' && r.json.modes.length === 5 && r.json.modes.some((m) => m.id === 'watch') && r.json.judge.status.model === 'deepseek-flash' && r.json.judge.config.provider === '' && r.json.judge.config.model === 'deepseek-flash')
+  check('群设置里带盯群节奏', rows['555'].settings.watch?.minIntervalMs === 30000 && rows['555'].settings.watch?.perHour === 40)
 
   let a = await call(bare, 'PUT', '/group/888/admit', { admitted: true })
   check('逐个群打开', a.json.ok && groupSettings.isAdmitted('888') && (await call(bare, 'GET', '/group')).json.groups.find((g) => g.groupId === '888').inScope)

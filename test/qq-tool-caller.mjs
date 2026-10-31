@@ -184,6 +184,86 @@ console.log('G. 按需翻记忆 shall_memory_recall')
   check('渲染：“以前”标出来；没有结果有说明', recall.output.render({}, inGroup)[0].text.includes('（以前）') && recall.output.render({}, { count: 0, items: [] })[0].text.includes('没翻到'))
 }
 
+console.log('H. 门控认控制台里接入的群（不只认 qq.scope.groups）')
+{
+  const guards = []
+  const registeredH = new Map()
+  const admitted = new Set(['892143654'])
+  registerQqTools({
+    ctx: { get: (n) => (n === 'tools' ? { register(d) { registeredH.set(d.name, d); return () => {} }, guard(fn) { guards.push(fn); return () => {} } } : undefined) },
+    config: resolveConfig({ scope: { groups: [], friends: [] } }),
+    log: silent,
+    send: async () => {},
+    listChats: () => [],
+    corpus: { search: () => [] },
+    memory,
+    memoryGeneration: () => ({ value: 0 }),
+    chatOfCaller,
+    groupSettings: { isAdmitted: (id) => admitted.has(String(id)) },
+  })
+  const guard = guards[0]
+  check('门控挂上了', typeof guard === 'function')
+  check('控制台接入的群：发消息放行', guard({ name: 'shall_qq_send', arguments: { chat_type: 'group', chat_id: '892143654', text: 'hi' } }) === undefined)
+  check('控制台接入的群：改记忆放行', guard({ name: 'shall_qq_memory', arguments: { chat_type: 'group', chat_id: '892143654' } }) === undefined)
+  const denied = guard({ name: 'shall_qq_send', arguments: { chat_type: 'group', chat_id: '555', text: 'hi' } })
+  check('没接入的群照样拒绝，并说明两个来源', typeof denied === 'string' && denied.includes('控制台的群接入'))
+  admitted.delete('892143654')
+  check('取消接入之后马上拒绝（每次现查，不缓存）', typeof guard({ name: 'shall_qq_send', arguments: { chat_type: 'group', chat_id: '892143654', text: 'hi' } }) === 'string')
+  admitted.add('892143654')
+  check('只读工具不过门控', guard({ name: 'shall_qq_history', arguments: { chat_type: 'group', chat_id: '555' } }) === undefined)
+  const summaryH = registeredH.get('shall_qq_summary')
+  check('群总结也认控制台接入的群', (await summaryH.execute({ chat_id: '892143654' }, OWNER)).chatId === '892143654')
+  check('群总结：没接入的群拒绝', await rejects(() => summaryH.execute({ chat_id: '555' }, OWNER)))
+}
+
+console.log('I. 发图 shall_qq_send_image')
+{
+  const stickers = path.join(tmp, 'stickers')
+  const work = path.join(tmp, 'work-g100')
+  const outside = path.join(tmp, 'outside')
+  for (const d of [stickers, work, outside]) fs.mkdirSync(d, { recursive: true })
+  const png = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489', 'hex')
+  fs.writeFileSync(path.join(stickers, '无语.png'), png)
+  fs.writeFileSync(path.join(work, 'meme.png'), png)
+  fs.writeFileSync(path.join(outside, 'secret.png'), png)
+  fs.writeFileSync(path.join(stickers, 'notes.txt'), 'not an image at all, just text')
+  fs.writeFileSync(path.join(stickers, 'big.png'), Buffer.concat([png, Buffer.alloc(4096)]))
+  const sentI = []
+  const guardsI = []
+  const registeredI = new Map()
+  registerQqTools({
+    ctx: { get: (n) => (n === 'tools' ? { register(d) { registeredI.set(d.name, d); return () => {} }, guard(fn) { guardsI.push(fn); return () => {} } } : undefined) },
+    config: resolveConfig({ scope: { groups: ['100'], friends: [] } }),
+    log: silent,
+    send: async (chatType, chatId, text, opts) => sentI.push({ chatType, chatId, text, opts }),
+    listChats: () => [],
+    chatOfCaller,
+    stickerDir: stickers,
+    maxImageBytes: 1024,
+  })
+  const img = registeredI.get('shall_qq_send_image')
+  const asIn = (id, cwd) => ({ agent: { session: { header: { ...(headers[id] ?? { id }), cwd } } } })
+  check('工具注册了', Boolean(img))
+  await img.execute({ path: '无语.png' }, asIn('g100', ''))
+  check('会话没有工作区时，相对路径按表情包目录算；一条只有这张图、不带文字', sentI.at(-1)?.chatId === '100' && sentI.at(-1).text === '' && sentI.at(-1).opts.image.startsWith('base64://'))
+  check('base64 内容就是那张图', Buffer.from(sentI.at(-1).opts.image.slice('base64://'.length), 'base64').equals(png))
+  await img.execute({ path: 'meme.png' }, asIn('g100', work))
+  check('相对路径按本会话工作区算', sentI.length === 2)
+  await img.execute({ path: path.join(stickers, '无语.png') }, asIn('g100', work))
+  check('有工作区时，表情包目录的绝对路径照样能发', sentI.length === 3)
+  check('工作区和表情包目录以外的图：拒绝', await rejects(() => img.execute({ path: path.join(outside, 'secret.png') }, asIn('g100', work))))
+  check('用 .. 跳出工作区：拒绝', await rejects(() => img.execute({ path: '../outside/secret.png' }, asIn('g100', work))))
+  check('网址：拒绝', await rejects(() => img.execute({ path: 'https://example.com/a.png' }, asIn('g100', work))))
+  check('不是图片：拒绝', await rejects(() => img.execute({ path: path.join(stickers, 'notes.txt') }, asIn('g100', work))))
+  check('太大：拒绝', await rejects(() => img.execute({ path: path.join(stickers, 'big.png') }, asIn('g100', work))))
+  check('文件不存在：拒绝', await rejects(() => img.execute({ path: 'nope.png' }, asIn('g100', work))))
+  check('群会话往别的聊天发图：拒绝', await rejects(() => img.execute({ chat_type: 'private', chat_id: '200', path: '无语.png' }, asIn('g100', work))))
+  check('没有会话头：拒绝', await rejects(() => img.execute({ chat_type: 'group', chat_id: '100', path: '无语.png' }, {})))
+  check('拒绝的时候一张都没发', sentI.length === 3)
+  check('门控也管发图：范围外的群拒绝', typeof guardsI[0]({ name: 'shall_qq_send_image', arguments: { chat_type: 'group', chat_id: '555', path: 'x.png' } }) === 'string' &&
+    guardsI[0]({ name: 'shall_qq_send_image', arguments: { chat_type: 'group', chat_id: '100', path: 'x.png' } }) === undefined)
+}
+
 console.log(`结果：${pass} 通过 / ${fail} 失败`)
 if (fail === 0) fs.rmSync(tmp, { recursive: true, force: true })
 process.exit(fail === 0 ? 0 : 1)
