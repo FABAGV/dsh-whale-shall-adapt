@@ -9,7 +9,7 @@ DeepSeek Harness（DSH）插件。名字里的 shall 是“应”：**让 AI 应
 
 两边共用一层**统一记忆**，这是核心：你说过的话、你的纠正、群里发生的事，都沉淀成一条条可以被你裁决的记忆，用得越久越贴你。
 
-> **状态**：0.1.0，还没发布。单元测试和假宿主 / 假 OneBot 的集成测试都过（见“开发与测试”），**还没在真机上跑过**（NapCat + DSH 桌面端），控制台新增的几页也还没人在真浏览器里看过样式。
+> **状态**：0.1.0。单元测试和假宿主 / 假 OneBot 的集成测试都过（见“开发与测试”），已在 NapCat + DSH 桌面端上试用过。
 
 ## 它做什么
 
@@ -33,13 +33,17 @@ DeepSeek Harness（DSH）插件。名字里的 shall 是“应”：**让 AI 应
 
 ## 安装
 
-还没发布。本地开发机上：
+一键安装（Windows / PowerShell，从 GitHub Release 下载 `dsh-whale-shall-adapt-0.1.0.tgz`、装进 profile、登记成 bundle，国内自动走加速镜像）：
 
 ```powershell
-dsh plugin --profile desktop add link:R:\dsh-whale-shall-adapt
+.\install.ps1                 # 自动挑 profile（desktop 优先）
+.\install.ps1 -Profile web    # 指定 profile
 ```
 
-`install.ps1` 是给以后发版用的一键安装器（下载、装进 profile、登记成 bundle）；发版前它指向的仓库要先建好。
+也可以手动下载 [Release](https://github.com/FABAGV/dsh-whale-shall-adapt/releases) 里的 tgz 后 `.\install.ps1 -File .\dsh-whale-shall-adapt-0.1.0.tgz`。
+开发机上直接链接源码目录：`dsh plugin --profile <名字> add link:<仓库路径>`。
+
+**和旧插件不能并存**：装之前先卸掉 `dsh-prompt-adapt` 和 `dsh-whale-inurqq`（两个 QQ 插件会抢同一个 6700 端口，同一条消息会被处理两遍）。
 
 ## 快速开始
 

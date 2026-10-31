@@ -66,7 +66,7 @@ jobs:
 
       # 产物与 npm 发布的是同一个包形状（`files` 字段决定内容），
       # 所以 asset 名字必须与 README / install.ps1 里写的约定一致：
-      #   dsh-prompt-adapt-<version>.tgz
+      #   dsh-whale-shall-adapt-<version>.tgz
       - name: 打包
         run: |
           set -e
@@ -94,8 +94,7 @@ jobs:
     env:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
-      # 包已经发布在 npm 上：https://www.npmjs.com/package/dsh-prompt-adapt
-      # （首发 2026-10-14，之后 `dsh plugin add dsh-prompt-adapt` 与 npmmirror 镜像都已可用）。
+      # 本包还没发布到 npm（来源插件 dsh-prompt-adapt 发布过，这个合并后的包没有）。
       # 这一段仍然是"仓库里配了 NPM_TOKEN secret 才会跑"：没配时走最后那条 echo 跳过，
       # 主线（GitHub Release 产出 tgz）不受影响。想让打 tag 自动发版，就在 secrets 里配上它。
       - if: env.NPM_TOKEN != ''
