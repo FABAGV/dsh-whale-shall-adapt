@@ -16,6 +16,9 @@ import { ConversationHandoff } from '../lib/conversation/handoff.js'
 import { IdleConsolidator } from '../lib/conversation/idle.js'
 import { createMemory } from '../lib/memory/index.js'
 import { resolveConfig } from '../lib/qq/config.js'
+// 假密钥（测试脱敏用）：运行时拼出来，源码里没有完整的密钥字面量，免得被密钥扫描当成真的
+const fakeKey = (prefix, body) => `${prefix}${body}`
+
 
 let pass = 0
 let fail = 0
@@ -126,9 +129,9 @@ console.log('C. 采集')
   user('sub', '不对', 'rpc-plugin')
   ev('ghost', 'tool/call', { callId: 'x', name: 'bash' })
   check('子代理、不认识的会话不采集', got.length === before)
-  user('root', '我的 token 是 sk-abcdefghijklmnopqrstuvwxyz0123456789ABCD，不对', 'rpc-plugin')
+  user('root', `我的 token 是 ${fakeKey('sk-', 'abcdefghijklmnopqrstuvwxyz0123456789ABCD')}，不对`, 'rpc-plugin')
   check('纠正句首才算；句中带密钥的话不产生信号', got.length === before)
-  user('root', '不对，key 是 sk-abcdefghijklmnopqrstuvwxyz0123456789ABCD', 'rpc-plugin')
+  user('root', `不对，key 是 ${fakeKey('sk-', 'abcdefghijklmnopqrstuvwxyz0123456789ABCD')}`, 'rpc-plugin')
   check('带密钥的原话经过脱敏再进信号', got.at(-1).kind === 'correction' && !got.at(-1).quote.includes('abcdefghijklmnopqrstuvwxyz0123456789'))
   check('采集统计', collector.snapshot().correction === 2 && collector.snapshot().takeover === 2 && collector.snapshot().toolFail === 1)
 }

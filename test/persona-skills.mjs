@@ -20,6 +20,9 @@ import { SkillStore, checkProposal, createSkillProvider, sessionDigest, sessionS
 import { redact } from '../lib/core/redact.js'
 import { JobRunner } from '../lib/core/jobs.js'
 import { extractJson } from '../lib/core/llm.js'
+// 假密钥（测试脱敏用）：运行时拼出来，源码里没有完整的密钥字面量，免得被密钥扫描当成真的
+const fakeKey = (prefix, body) => `${prefix}${body}`
+
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pa-persona-skills-'))
 let pass = 0
@@ -173,8 +176,8 @@ const skills = new SkillStore({ dir: path.join(tmp, 'skills') })
   const protectedEdit = skills.applyProposals([{ ...good, name: 'fix-powershell', description: '模型又想改' }], { minScore: 4 })
   check('你改过的技能不被自动整理覆盖', protectedEdit.skipped.some(item => item.name === 'fix-powershell') && skills.get('fix-powershell').body.startsWith('我手动改过'))
   check('状态与可见范围校验', skills.update('weak-one', { status: 'weird' }).ok === false && skills.update('weak-one', { visibility: 'public' }).ok === false)
-  check('正文里的密钥在落库前脱敏', skills.applyProposals([{ ...good, name: 'with-secret', body: `${good.body} token=abcd1234efgh 和 sk-abcdefghijklmnopqrstu` }]).created.length === 1 &&
-    !skills.get('with-secret').body.includes('abcd1234efgh') && !skills.get('with-secret').body.includes('sk-abcdefghijklmnopqrstu'))
+  check('正文里的密钥在落库前脱敏', skills.applyProposals([{ ...good, name: 'with-secret', body: `${good.body} token=abcd1234efgh 和 ${fakeKey('sk-', 'abcdefghijklmnopqrstu')}` }]).created.length === 1 &&
+    !skills.get('with-secret').body.includes('abcd1234efgh') && !skills.get('with-secret').body.includes(`${fakeKey('sk-', 'abcdefghijklmnopqrstu')}`))
   skills.markMined({ a: 1, b: 2 })
   check('记下哪些会话整理过', skills.state.mining.mined.a === 1)
 }
@@ -200,7 +203,7 @@ console.log('H. 会话摘要（整理技能用）')
 {
   const events = [
     { type: 'turn/start', turn: 1, time: 1 },
-    { type: 'user/message', turn: 1, time: 2, message: { content: [{ type: 'text', text: '帮我修一下 C:\\Users\\alice\\proj 的报错，我的 key 是 sk-abcdefghijklmnopqrstuvwx' }], source: { kind: 'user' } } },
+    { type: 'user/message', turn: 1, time: 2, message: { content: [{ type: 'text', text: `帮我修一下 C:\\Users\\alice\\proj 的报错，我的 key 是 ${fakeKey('sk-', 'abcdefghijklmnopqrstuvwx')}` }], source: { kind: 'user' } } },
     { type: 'tool/call', turn: 1, time: 3, callId: 'c1', toolName: 'bash', data: { arguments: { command: 'npm test -- --token=abcd1234efgh5678' } } },
     { type: 'tool/result', turn: 1, time: 4, callId: 'c1', isError: true, errorCode: 'EXIT_1', message: { content: [{ type: 'text', text: 'Error: boom' }] } },
     { type: 'tool/call', turn: 1, time: 5, callId: 'c2', toolName: 'read', data: { arguments: { file_path: 'src/a.js' } } },
@@ -210,7 +213,7 @@ console.log('H. 会话摘要（整理技能用）')
   const digest = sessionDigest(events, { title: '修报错' })
   check('有你的请求、工具调用、失败与收尾', digest.includes('你：') && digest.includes('调用 bash(') && digest.includes('✗') && digest.includes('AI 收尾：修好了'))
   check('不带成功工具的输出原文', !digest.includes('这是文件全文'))
-  check('脱敏：密钥、用户名、命令里的口令', !digest.includes('sk-abcdefghijklmnopqrstuvwx') && !digest.includes('alice') && !digest.includes('abcd1234efgh5678'))
+  check('脱敏：密钥、用户名、命令里的口令', !digest.includes(`${fakeKey('sk-', 'abcdefghijklmnopqrstuvwx')}`) && !digest.includes('alice') && !digest.includes('abcd1234efgh5678'))
   check('超长摘要截断', sessionDigest(Array.from({ length: 400 }, (_, index) => ({ type: 'user/message', turn: index, time: index, message: { content: [{ type: 'text', text: `第 ${index} 条请求` }], source: { kind: 'user' } } })), { maxChars: 2000 }).length <= 2100)
   const stats = sessionStats(events)
   check('统计工具调用与失败次数', stats.toolCalls === 2 && stats.toolErrors === 1 && stats.userMessages === 1)
@@ -221,8 +224,8 @@ console.log('H. 会话摘要（整理技能用）')
 console.log('I. 脱敏')
 {
   const cases = [
-    ['sk-abcdefghijklmnopqrstuvwx', '<密钥>'],
-    ['ghp_abcdefghijklmnopqrstuvwxyz0123', '<密钥>'],
+    [`${fakeKey('sk-', 'abcdefghijklmnopqrstuvwx')}`, '<密钥>'],
+    [`${fakeKey('ghp_', 'abcdefghijklmnopqrstuvwxyz0123')}`, '<密钥>'],
     ['Authorization: Bearer abcdefghijklmnop123', 'Bearer <令牌>'],
     ['https://user:pass@example.com', '<凭据>@'],
     ['password=hunter22', '<已隐藏>'],
