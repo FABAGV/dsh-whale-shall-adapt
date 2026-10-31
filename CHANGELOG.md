@@ -1,5 +1,24 @@
 # 更新记录
 
+## 0.3.0（2026-11-01）
+
+### 新增
+- 盯群节奏自适应：对话中每 `watch.activeIntervalMs`（默认 10 秒）看一眼；bot 最后一句话之后 `watch.conversationWindowMs`（默认 5 分钟）内都算对话中；之后用 `watch.relaxMs`（默认 10 分钟）线性回到 `watch.minIntervalMs`。对话中每小时上限用 `watch.activePerHour`（默认 120）。控制台群卡片显示当前节奏（对话中 / 回落中 / 常态）和实际间隔。
+- 控制台群聊页新增「所有群的统一设置」：没单独设置的群都跟随它；单个群改了就自动变成本群单独设置，可以一键改为跟随；支持「所有群改为跟随统一设置」和「把本群设置设为所有群的默认」。`groups.json` 升到 v2（`global.settings`），旧文件照常读。
+- 控制台群卡片现在能调盯群一次带几条 / 多少字（以前只有间隔和每小时次数）。
+- 消息里的**图片 / 语音 / 视频地址**现在会随正文交给会话（`participation.mediaUrls`，默认开）：正文后面多一段 `[媒体] - 图片 1：https://…`，模型能看见地址、也能在回复里引用；地址只展示不抓取（抓图仍走 `get_image`）。
+- **语音转写**：语音消息调 NapCat 的 `fetch_ptt_text`（QQ 自带的语音转文字）取回文字一并交给会话（`participation.voiceText`，默认开）；4 秒超时、按 message_id 缓存 10 分钟、取不到就只给地址，不影响投递。语料里落转写、不落地址。
+- **记忆存储可选择 SQLite 真相库**（`memory.store: json | sqlite`，默认 json）：`sqlite` 时 `$DSH_HOME/shall/memory/memory.db` 是真相源，带 FTS5 trigram 全文索引，`memory.json` 每次落盘导出成备份；首次切换自动导入现有记忆，打不开 DB 自动退回 json。`memory.recall()` 在 sqlite 下先走全文索引、再用字符相似度补分，关掉索引行为与旧版一致。
+- **记忆书架 `area` + `shared` 范围**：`area` 是归置（模型可写，没给按 scope 推默认），`scope` 仍是权限；跨会话的学问放 `shared` 范围（所有人可见、只有主人侧能写），QQ 来源写 `shared` 会被拒。
+
+### 修复（改动审查）
+- “把本群设置设为所有群的默认”在**跟随统一设置**的群上会拿到空覆盖，进而清空统一设置并清掉所有群的单独设置：现在这类群不显示该按钮，接口也直接返回 400，不会落盘。
+- 对话中的看群额度（`activePerHour`）与常态额度（`perHour`）分开计数：热聊把对话中额度打满后，回落阶段不会因为同一小时的计数还满着而停摆最长约 50 分钟。
+- `DELETE /group/:id/settings` 不再给不存在的群建“幽灵”记录（返回 404）；`clearGroupSettings()` 不再凭空建群。
+- `groups.json` 每次落盘前把上一份留成 `groups.json.bak`；误点“所有群改为跟随统一设置 / 清空统一设置”可以回捞。文档改正 v2 的写入时机（任何一次落盘，不只是保存设置）。
+- `followsGlobal` 改成递归判空：覆盖里只剩 `null` / 空对象的旧数据不再被误判成“本群单独设置”。
+- 补上 `watch.messages` / `watch.chars` / 新节奏字段的 schema 上限；`global()` 加缓存（engine 每条消息不再深拷贝）；删掉未读的 `chat.lastInboundAt`。
+
 ## 0.2.1（2026-10-31）
 
 按真机观察改的群聊行为：以前群里只要有人说了句“好的谢谢”“嗯”，群就被关 20 分钟，期间只有 @ 能穿透，看起来像“不 @ 就不回”。

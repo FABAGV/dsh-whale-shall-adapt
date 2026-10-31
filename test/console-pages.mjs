@@ -124,6 +124,7 @@ console.log('A. 群聊页')
   check('页面建出来了，标题和判断模型状态在', text.includes('群聊') && text.includes('已改用备用模型') && text.includes('host/default'))
   check('provider 跟着宿主时写明实际落到哪', text.includes('deepseek-account/deepseek-flash（provider 跟着宿主）') && text.includes('依次改用：deepseek-official/deepseek-flash'))
   check('配置里写的群（已接入）和见过的群（没接入）都在', text.includes('群 555') && text.includes('已接入') && text.includes('群 888（新拉进来的群）') && text.includes('没接入'))
+  check('跟随统一设置的群不显示“提升为默认”按钮', buttons(view, '把本群设置设为所有群的默认').length === 0)
   check('没接入的群只给“接入”按钮，不给调参', buttons(view, '接入这个群').length === 1 && !text.includes('静默时段') === false)
   const admit = buttons(view, '接入这个群')[0]
   await admit.fire('click', { currentTarget: admit })
@@ -137,23 +138,46 @@ console.log('A. 群聊页')
   confirmAnswer = true
 
   const selects = byTag(view, 'select')
-  check('已接入的群有档位下拉，五个选项（含盯群），默认选“活跃”', selects.length >= 1 && selects[0].childNodes.length === 5 && selects[0].value === 'active')
-  const modeSelect = selects[0]
-  modeSelect.value = 'active'
-  await modeSelect.fire('change')
-  check('改档位：写进运行时设置', engine.settingsFor('555').mode === 'active')
+  check('最上面是所有群的统一设置，下面是群的档位下拉（五个选项含盯群，默认活跃）',
+    text.includes('所有群的统一设置') && buttons(view, '保存统一设置').length === 1 &&
+    selects.length >= 2 && selects[0].childNodes.length === 5 && selects[0].value === 'active' && selects[1].value === 'active')
+  const groupMode = selects[1]
+  groupMode.value = 'mention'
+  await groupMode.fire('change')
+  check('改单个群的档位：写进这个群的单独设置', engine.settingsFor('555').mode === 'mention' && groupSettings.get('555').settings.mode === 'mention')
+  view = await run(renderGroup)
+  text = textOf(view)
+  check('本群单独设置会被标记出来', text.includes('本群单独设置'))
+  check('有单独设置的群才显示“提升为默认”按钮', buttons(view, '把本群设置设为所有群的默认').length === 1)
+  const backToActive = byTag(view, 'select')[1]
+  backToActive.value = 'active'
+  await backToActive.fire('change')
   view = await run(renderGroup)
   text = textOf(view)
   check('活跃档才出现“插话积极度”', text.includes('插话积极度'))
-  const range = byTag(view, 'input').find((n) => n.attrs.type === 'range')
-  range.value = '0.9'
-  await range.fire('change')
-  check('拖积极度滑杆：写进设置', engine.settingsFor('555').eagerness === 0.9)
+  const ranges = byTag(view, 'input').filter((n) => n.attrs.type === 'range')
+  ranges.at(-1).value = '0.9'
+  await ranges.at(-1).fire('change')
+  check('拖积极度滑杆：写进这个群的设置', engine.settingsFor('555').eagerness === 0.9 && groupSettings.get('555').settings.eagerness === 0.9)
 
   const boxes = byTag(view, 'input').filter((n) => n.attrs.type === 'checkbox' && n.parentNode && textOf(n.parentNode).includes('成员记忆'))
-  boxes[0].checked = false
-  await boxes[0].fire('change')
+  boxes.at(-1).checked = false
+  await boxes.at(-1).fire('change')
   check('勾掉“成员记忆”：该群关闭', engine.settingsFor('555').members.enabled === false)
+
+  // 统一设置：改一处，所有跟随的群都变；已经单独设置的群不受影响
+  const globalRange = ranges[0]
+  globalRange.value = '0.3'
+  await globalRange.fire('input')
+  const saveGlobal = buttons(view, '保存统一设置')[0]
+  await saveGlobal.fire('click', { currentTarget: saveGlobal })
+  check('保存统一设置：跟随的群生效', groupSettings.global().eagerness === 0.3 && engine.settingsFor('999').eagerness === 0.3)
+  check('已单独设置的群不受统一设置影响', engine.settingsFor('555').eagerness === 0.9)
+  confirmAnswer = true
+  const applyAll = buttons(view, '所有群改为跟随统一设置')[0]
+  await applyAll.fire('click', { currentTarget: applyAll })
+  check('所有群改为跟随统一设置：清掉单群覆盖', engine.settingsFor('555').eagerness === 0.3 && Object.keys(groupSettings.get('555').settings ?? {}).length === 0)
+  confirmAnswer = true
 
   memory.observe({ scope: 'member:555:10001', kind: 'preference', text: '喜欢摄影', actor: 'qq:members', origin: 'model' })
   view = await run(renderGroup)

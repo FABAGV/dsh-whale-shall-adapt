@@ -5,7 +5,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { resolveGroupConfig, settingsForGroup, inQuietHours, GROUP_DEFAULTS } from '../lib/group/config.js'
+import { resolveGroupConfig, settingsForGroup, inQuietHours, GROUP_DEFAULTS, watchCadence } from '../lib/group/config.js'
 import { createGroupSettings } from '../lib/group/settings.js'
 import { classifyClosing, closingHint } from '../lib/group/closure.js'
 import { parseJudgeReply, thresholdFor, createJudge, buildJudgePrompt } from '../lib/group/judge.js'
@@ -731,6 +731,101 @@ console.log('M. 盯群档：攒一小批交给主模型看')
   check('对方在收尾：不看', !d.decisions.some((x) => x.reason === 'watch-look'))
   const snap = t.engine.snapshot(G)
   check('快照：最近一小时看群次数、上次看群时间', snap.looksLastHour === 4 && snap.lastLookAt > 0)
+}
+
+console.log('N. 盯群自适应节奏 + 所有群统一设置')
+{
+  const watch = { ...GROUP_DEFAULTS.watch }
+  let c = watchCadence({ watch, now: 1_000_000 })
+  check('没有对话：常态节奏', c.phase === 'steady' && c.intervalMs === 30000 && c.perHourCap === 40)
+  c = watchCadence({ watch, lastBotAt: 1_000_000 - 60_000, now: 1_000_000 })
+  check('刚说过话：对话中 10 秒一次、每小时上限放宽', c.phase === 'conversation' && c.intervalMs === 10000 && c.perHourCap === 120)
+  c = watchCadence({ watch, turnOpen: true, now: 1_000_000 })
+  check('正在等一轮结束也算对话中', c.phase === 'conversation')
+  c = watchCadence({ watch, lastBotAt: 1_000_000 - (5 * 60_000 + 5 * 60_000), now: 1_000_000 })
+  check('对话结束后回落一半：间隔和上限都在中间', c.phase === 'relaxing' && c.intervalMs > 10000 && c.intervalMs < 30000 && c.perHourCap > 40 && c.perHourCap < 120)
+  c = watchCadence({ watch, lastBotAt: 1_000_000 - (5 * 60_000 + 10 * 60_000), now: 1_000_000 })
+  check('回落结束：回到常态', c.phase === 'steady' && c.intervalMs === 30000 && c.perHourCap === 40)
+  c = watchCadence({ watch: { ...watch, activeIntervalMs: 60000 }, lastBotAt: 1_000_000 - 1000, now: 1_000_000 })
+  check('对话中节奏设得比常态大：不生效（不会更慢）', c.intervalMs === 30000)
+
+  const t = setup({ mode: 'watch', group: { watch: { minIntervalMs: 30000, activeIntervalMs: 10000, conversationWindowMs: 60000, relaxMs: 120000 } } })
+  t.send('大家好')
+  await t.clock.advance(4100)
+  check('盯群先看一眼', t.decisions.some((d) => d.reason === 'watch-look'))
+  t.engine.noteTurnOutcome(G, { spoke: false })
+  check('快照：常态节奏', t.engine.snapshot(G).lookCadence?.phase === 'steady' && t.engine.snapshot(G).lookCadence?.intervalMs === 30000)
+  t.engine.noteBotReply({ chatKey: G, chars: 8, at: t.clock.now() })
+  check('说过话之后：对话中 10 秒', t.engine.snapshot(G).lookCadence?.phase === 'conversation' && t.engine.snapshot(G).lookCadence.intervalMs === 10000)
+  await t.clock.advance(120000)
+  c = t.engine.snapshot(G).lookCadence
+  check('对话窗口过后开始回落', c?.phase === 'relaxing' && c.intervalMs > 10000 && c.intervalMs < 30000)
+  await t.clock.advance(60000)
+  check('回落结束回到常态', t.engine.snapshot(G).lookCadence?.phase === 'steady')
+
+  const dir2 = tmp()
+  const settings2 = createGroupSettings({ dir: dir2 })
+  const cfg2 = resolveGroupConfig({ defaultMode: 'active' })
+  check('没有统一设置：用配置默认', settingsForGroup(cfg2, '123').mode === 'active' && settingsForGroup(cfg2, '123').watch.minIntervalMs === 30000)
+  settings2.replaceGlobal({ mode: 'watch', watch: { minIntervalMs: 60000 } })
+  let eff = settingsForGroup(cfg2, '123', settings2.get('123'), settings2.global())
+  check('统一设置生效', eff.mode === 'watch' && eff.watch.minIntervalMs === 60000)
+  settings2.replaceSettings('123', { watch: { minIntervalMs: 15000 } })
+  eff = settingsForGroup(cfg2, '123', settings2.get('123'), settings2.global())
+  check('群单独设置优先于统一设置', eff.mode === 'watch' && eff.watch.minIntervalMs === 15000)
+  settings2.clearGroupSettings('123')
+  eff = settingsForGroup(cfg2, '123', settings2.get('123'), settings2.global())
+  check('清掉群设置后跟随统一设置', eff.watch.minIntervalMs === 60000)
+  settings2.setGlobal({ watch: { minIntervalMs: 45000 } })
+  check('统一设置可以增量改', settings2.global().watch.minIntervalMs === 45000 && settings2.global().mode === 'watch')
+  settings2.replaceGlobal({})
+  check('清空统一设置：回到配置默认', settingsForGroup(cfg2, '123', null, settings2.global()).watch.minIntervalMs === 30000)
+  settings2.dispose()
+}
+
+console.log('O. 审查回归：清群设置、groups.json 备份、盯群额度分离')
+{
+  // 清一个不存在的群：不能凭空建记录（否则控制台多出幽灵群）
+  const dir3 = tmp()
+  const s3 = createGroupSettings({ dir: dir3 })
+  check('清不存在的群的设置：返回 null、不建记录', s3.clearGroupSettings('999999') === null && s3.get('999999') === null)
+  s3.noteSeen('123', '真实群')
+  check('清存在的群：记录还在、设置清空', Boolean(s3.clearGroupSettings('123')) && Object.keys(s3.get('123').settings).length === 0)
+  s3.dispose()
+
+  // groups.json 每次落盘前留上一份 .bak
+  const dir4 = tmp()
+  const s4 = createGroupSettings({ dir: dir4 })
+  const bak4 = path.join(dir4, 'groups.json.bak')
+  s4.noteSeen('1', '群一')
+  s4.flush()
+  check('第一次落盘：没有上一份，所以没有 .bak', !fs.existsSync(bak4))
+  s4.replaceGlobal({ mode: 'watch' })
+  s4.flush()
+  check('第二次落盘：留下上一份 groups.json.bak', fs.existsSync(bak4))
+  const bakJson = JSON.parse(fs.readFileSync(bak4, 'utf8'))
+  check('.bak 确实是上一份（旧文件里 global 还是空的）', bakJson.version === 2 && Object.keys(bakJson.global.settings).length === 0)
+  s4.dispose()
+
+  // 对话中的看群额度与常态额度分开计数：热聊打满 activePerHour，不该把回落后的 perHour 额度也占掉
+  const t = setup({ mode: 'watch', group: { watch: { minIntervalMs: 5000, perHour: 2, activeIntervalMs: 1000, conversationWindowMs: 60000, relaxMs: 0, activePerHour: 20 } } })
+  const looks = () => t.decisions.filter((d) => d.reason === 'watch-look')
+  t.send('开始')
+  await t.clock.advance(4100)
+  t.engine.noteTurnOutcome(G, { spoke: false })
+  t.engine.noteBotReply({ chatKey: G, chars: 5, at: t.clock.now() })
+  for (let i = 0; i < 5; i += 1) {
+    t.send(`聊${i}`)
+    await t.clock.advance(4100)
+    t.engine.noteTurnOutcome(G, { spoke: false })
+  }
+  check('对话中不受常态 perHour=2 限制：连续看了 ≥6 次', looks().length >= 6)
+  check('对话中没被 watch-limit 挡', !t.decisions.some((d) => d.reason === 'watch-limit'))
+  await t.clock.advance(61000)
+  t.send('安静后的新话题')
+  await t.clock.advance(4100)
+  t.engine.noteTurnOutcome(G, { spoke: false })
+  check('对话结束后：常态额度没被对话中的看群占用', looks().length >= 7 && !t.decisions.some((d) => d.reason === 'watch-limit'))
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)

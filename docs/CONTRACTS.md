@@ -26,7 +26,8 @@
 ```
 $DSH_HOME/shall/
 ├─ owner.json                主人身份绑定（4.8）：配对的 QQ 号
-├─ groups.json               群的运行时设置（第 8 节）：控制台里接入了哪些群、各群的档位和参数、见过但没接入的群（只记条数）、插话结果统计、后台任务进度
+├─ groups.json               群的运行时设置（第 8 节，v2）：控制台里接入了哪些群、各群的档位和参数、所有群的统一设置（`global.settings`）、见过但没接入的群（只记条数）、插话结果统计、后台任务进度；
+│                            每次落盘前把上一份留成 groups.json.bak。v2 在任何一次落盘时写成（准入、统计、设置都算，不只是保存设置）
 ├─ outreach.json             主动私聊主人（8.1）：控制台的开关和调参、下次发送时间、今天的次数、最近联系记录
 ├─ meme/                     梗百科（第 11 节）：memes.db（导入或同步来的词库）、search_archive.json（检索存档）、settings.json（联网开关）
 ├─ memory/memory.json        统一记忆（第 4 节）；写前备份为 memory.json.bak
@@ -53,7 +54,7 @@ stateDir / sessionsRoot / signals / profile / scan / inject / privacy / console 
 qq:
   connection:   { mount, host, reversePort: 6700, reversePath, tokenRef: SHALL_ONEBOT_TOKEN, token, callTimeoutMs }
   scope:        { groups: [], friends: [], blockedGroups: [], blockedFriends: [] }   # 默认一个群都不接；'*' = 全部；私聊 = friends ∪ 配对的主人
-  participation: { privateMode, aliases: [], poke: true, mergeMs: 1200, knownBots: [], images: true, maxImages: 3, maxImageBytes: 4194304 }
+  participation: { privateMode, aliases: [], poke: true, mergeMs: 1200, knownBots: [], images: true, maxImages: 3, maxImageBytes: 4194304, mediaUrls: true, voiceText: true }
   tasks:        { workspaceRoot, prefix, chatPrefix }
   conversation: { handoffAtRatio, minTokensBetweenHandoffs, memoryBudgetTokens, injectMode, handoffRetainDays, handoffInputChars,
                   handoffMaxTokens, fragmentMergeJaccard, fragmentAskJaccard, agingEveryGens, maxFragmentsPerChat, idleMinutes: 20, idleMinTurns: 3 }
@@ -63,7 +64,8 @@ qq:
 # ── 群聊回复决策（第 8 节）
 group:
   defaultMode: mention              # silent | mention | present | active | watch
-  watch:       { minIntervalMs: 30000, perHour: 40, messages: 30, chars: 3000 }
+  watch:       { minIntervalMs: 30000, perHour: 40, messages: 30, chars: 3000,
+                 activeIntervalMs: 10000, conversationWindowMs: 300000, relaxMs: 600000, activePerHour: 120 }
   judge:       { provider: '', model: deepseek-flash, timeoutMs: 15000 }   # provider 留空 = 跟宿主在用的 provider
   eagerness: 0.5
   present:     { minutes: 8, messages: 12 }
@@ -121,12 +123,13 @@ outreach: { enabled: false, quietHours: { start: '23:30', end: '08:30' }, maxPer
 ### 4.2 接口
 
 ```js
-const memory = createMemory({ dir, log, config: config.memory, now?: () => number })
+const memory = createMemory({ dir, log, config: config.memory, store: 'json' | 'sqlite', now?: () => number })
 
 memory.observe(input)
 // → { action: 'new'|'dup'|'merged'|'ask'|'conflict'|'rejected'|'dropped', id?, similarity?, conflictsWith? }
-//   input = { scope, kind, text, actor, importanceDelta?, importance?, confidence?, status?, origin?,
+//   input = { scope, kind, text, actor, area?, importanceDelta?, importance?, confidence?, status?, origin?,
 //             source?: { sessionId, at, quote }, sources?: [source], supersedes?: [id], mergeWith?: id, validUntil?, gen? }
+//   area 是「书架」（见 4.2.1），不给就按 scope 推一个默认值。
 //   dup / merged 命中一条被生成器撤回（retract）或被用户“这一版先拿掉”（dismiss）的记录时，它恢复原状态（QQ 来源不恢复）。
 //   顺序：脱敏 → 文本指纹在“已忘掉”里就丢弃 → 和同一家里被否定的结论或边界近乎原样（≥ merge）就丢弃（rejected）
 //         → mergeWith 合并 → 和同范围已有记忆 ≥ merge 判 dup → 和被否定的结论 ≥ conflict 新建为候选（conflict）
@@ -156,6 +159,18 @@ memory.export(query) / memory.revision(scope) / memory.onChange(listener) / memo
 **生成器碰不到的东西**：置顶的、`origin` 为 `user` / `user-confirmed` 的记忆，`retract`、`demote`、`supersedes`、`age()` 都不动它们；
 `rejected` 和 `boundary` 也不会被 `age()` 删掉。
 
+### 4.2.1 存储与书架（`lib/memory/sqlite-store.js`、`lib/memory/areas.js`）
+
+- **存储**：`memory.store` 配置项 —— `json`（默认，`memory.json` 是真相源）或 `sqlite`
+  （`$DSH_HOME/shall/memory/memory.db` 当真相源，带 FTS5 trigram 全文索引；每次落盘把整份导出成 `memory.json` 当备份）。
+  首次切到 sqlite 会自动把现有 `memory.json` 导进去，原文件保留；打不开 DB 就自动退回 json，不阻塞启动。
+- **书架 `area`**：记忆放在哪个书架，和 `scope`（谁能看）正交。模型可以在写入时选（`observe({ area })`），
+  没给就按 scope 推默认：`owner*` → 同名、`chat:*` → 它自己、`member:<群号>:<QQ>` → `group:<群号>`。
+  跨群的学问用自定义书架（如 `domain:DNS`、`skill`），全部放在 `shared` 范围里 —— 用户 2026-11-01 定的默认：所有人可见。
+- **`shared` 范围**：任何会话（DSH、主人私聊、群聊）都能读；只有主人侧（DSH 会话 / 控制台）能写，QQ 来源写 `shared` 会被拒。
+- **召回**：sqlite 模式下 `memory.recall()` 先走 FTS5（中文按 trigram 子串命中），再用字符相似度补分排序；
+  全文没命中、或查询不到 3 个字时回落 LIKE / 全表相似度 —— 关掉索引时行为与旧版一致。
+
 ### 4.3 相似度阈值（实测，10 组中文句子）
 
 字符 3-gram Jaccard：真实改写只有 0.0–0.45，只差一个关键内容的不同结论也能到 0.35。所以相似度只用来做三件确定的事：
@@ -181,6 +196,8 @@ memory.export(query) / memory.revision(scope) / memory.onChange(listener) / memo
 - QQ 来源的写入（actor 以 `qq` 开头）在主人范围里只能写 `owner:chat`；`owner` 与 `owner:work` 只由 DSH 侧的画像生成器和用户自己写。
 - 群里**主人自己**说的话按群友处理，写 `member:<群号>:<主人QQ>`，不进主人的三片（群里说的话是在给群里的人看）。
 - 计算可见范围的唯一入口是 `privacy.scopesVisibleTo(header)`（第 5 节）。
+- **`shared`（所有人可见）**：跨聊天的学问、做法放这里。所有会话都读得到（`chat-memory.readScopes` 与主人侧注入的范围里都加了它）；
+  写入只允许主人侧（DSH 会话 / 控制台），QQ 来源写 `shared` 被 `observe()` 拒掉 —— 群里的内容不能借这个口子漏到别的群。
 
 ### 4.5 主人的三片记忆
 
@@ -323,7 +340,9 @@ engine.settingsFor(groupId) / engine.snapshot(chatKey?) / engine.ignoreSender(gr
 
 五档（默认 `active`）：`silent` 只记录；`mention` 被叫到才回；`present` 点名之后，被它回复过的人 `present.minutes` 分钟或 `present.messages` 条之内接着说可以不再 @；
 `active` 没人叫也可能插话；`watch` 盯群：等时机之后，把还没给常驻会话看过的群消息（不含命令、别的 bot 和已经单独交过的点名消息，最多 `watch.messages` 条 / `watch.chars` 字）整批交给常驻会话，
-由主模型自己决定接不接（不调便宜模型）。两次看群至少隔 `watch.minIntervalMs`、每小时最多 `watch.perHour` 次，主动说话另受 `budget.perHour` 约束；常驻会话还在回上一轮（包括被叫到的那一轮）时不叠着送，回完再看；
+由主模型自己决定接不接（不调便宜模型）。两次看群至少隔 `watch.minIntervalMs`、每小时最多 `watch.perHour` 次；**对话中**（正在回一轮，或 bot 最后一句话在 `watch.conversationWindowMs` 内）改用
+`watch.activeIntervalMs`（默认 10 秒）和 `watch.activePerHour`（默认 120），对话窗口结束后用 `watch.relaxMs` 线性回到常态节奏（唯一实现是 `watchCadence()`，快照里 `lookCadence.phase` = `conversation`/`relaxing`/`steady`）；
+主动说话另受 `budget.perHour` 约束；对话中的看群和常态看群**分开计数**：`activePerHour` 只约束对话中的看群、`perHour` 单独约束常态看群（回落阶段不会被热聊时打满的计数卡住）；常驻会话还在回上一轮（包括被叫到的那一轮）时不叠着送，回完再看；
 看群那一轮默认不引用、不 @，要接哪条由模型写 `<quote id/>`；“连续几次没开口”的提醒在盯群档不发。五层，前四层不调模型：
 
 1. **硬规则**：潜水档不回；被叫到的一律回（同一个人 60 秒内最多 6 次，另一个 bot 连环 @ 10 分钟内最多响应 2 次）；没被叫到时，命令消息、只 @ 了别人、别的 bot 说的、静默时段、被禁言、被绕开的人、对话已收尾，都不接。收尾只挡收尾话（附和/道别）：期间只要有人说了一句有内容的新话，立刻解除。
@@ -338,8 +357,12 @@ engine.settingsFor(groupId) / engine.snapshot(chatKey?) / engine.ignoreSender(gr
 插话反馈（`lib/group/feedback.js`）：主动插话后 5 分钟内，有人回复/@ 它 = `engaged`；说“闭嘴 / 没问你”（要出现在插话后的前 3 条消息里，或明确对 bot 说）、消息被别人撤回 = `rejected`；
 被禁言 = `muted`；没人理 = `silence`。结果写进 `groups.json` 的接住率，被嫌弃满 2 次在该群记一条低置信度偏好，走 `signals` 总线。
 
-运行时群设置 `lib/group/settings.js`（`groups.json`）：准入 = 配置里的 `qq.scope.groups`（含 `*`）∪ 控制台打开的群，黑名单优先；
-每个群的有效设置 = 全局默认 ← `group.templates[群号]` ← 控制台写下的覆盖（`settingsForGroup`）。没接入的群只记“见过”（群号、群名、条数），不记内容。
+运行时群设置 `lib/group/settings.js`（`groups.json`，v2 起带 `global.settings`）：准入 = 配置里的 `qq.scope.groups`（含 `*`）∪ 控制台打开的群，黑名单优先；
+每个群的有效设置 = 全局默认 ← `group.templates[群号]` ← 控制台写下的“所有群统一设置” ← 这个群的单独覆盖（`settingsForGroup`）。
+没单独覆盖的群都跟随统一设置（控制台 `followsGlobal` 标记）；改统一设置一处生效，单个群改了自动变成本群覆盖，可以一键清掉回到跟随。
+统一设置是**整层覆盖**（保存时把这一页的可编辑项都写进 `global.settings`，会盖住配置默认值和 `group.templates`），想回到配置默认点“清空统一设置”。
+`groups.json` 每次落盘前会把上一份留成 `groups.json.bak`；`POST /group/:id/promote` 只对有单独设置的群有效（跟随中的群返回 400），不会把统一设置清空。
+没接入的群只记“见过”（群号、群名、条数），不记内容。
 
 ## 8.1 主动私聊主人 `lib/outreach/`（PLAN 第 45 条）
 
@@ -364,7 +387,7 @@ engine.settingsFor(groupId) / engine.snapshot(chatKey?) / engine.ignoreSender(gr
 |---|---|
 | 概览 / 画像 / 权限 / 人格 / 技能 / 审计 | `/overview`、`/profile*`、`/privacy`、`/sessions`、`/personas*`、`/skills*`、`/audit`、`/jobs*` |
 | QQ | `GET /qq/health`、`/qq/owner`（配对）、`/qq/chats`、`/qq/members` |
-| 群聊 | `GET /group`；`PUT /group/:id/admit`、`/group/:id/settings`；`DELETE /group/:id`；`POST /group/:id/forget-member`（“忘掉我”） |
+| 群聊 | `GET /group`（含 `global` 统一设置与每个群的 `followsGlobal`）；`PUT /group/:id/admit`、`/group/:id/settings`；`DELETE /group/:id`、`DELETE /group/:id/settings`（改为跟随统一设置）；`PUT/DELETE /group/global-settings`；`POST /group/apply-global`、`POST /group/:id/promote`；`POST /group/:id/forget-member`（“忘掉我”） |
 | 主动私聊 | `GET /outreach`；`PUT /outreach`；`POST /outreach/preview`、`/outreach/reset` |
 | 梗百科 | `GET /meme`；`POST /meme/import`；`PUT /meme/settings`；`POST/DELETE /meme/sync`；`DELETE /meme/archive`；`/meme/slang*` |
 | 记忆 | `GET /memory/scopes`、`GET /memory?scope=&status=&kind=&q=`；`POST /memory/:id/judge`、`/memory/purge` |
@@ -451,3 +474,22 @@ engine.settingsFor(groupId) / engine.snapshot(chatKey?) / engine.ignoreSender(gr
 
 正文末尾的说明：`（随消息附了 N 张图。）` / `（……另有 N 张没取到。）` / `（这条消息带图片，但当前模型不支持看图，你看不到……）`，让模型如实说看不到，不要猜。
 活跃档的判断模型目前只看文字（图片是 `[图片]` 占位）。
+
+## 14.1 媒体地址与语音转写 `lib/qq/onebot/media.js`
+
+OneBot 的 image / record / video 段本来就带 `url`（NapCat 给的 CDN 地址），但以前 `plainText()` 只输出 `[图片]` / `[语音]`，
+模型既看不到地址，也没法在回复里引用。现在投递给会话的正文后面会多一段：
+
+```
+[媒体]
+- 图片 1：https://gchat.qpic.cn/…
+- 语音 2：https://…　转写：「今天不直播了」
+```
+
+- `participation.mediaUrls`（默认开）：是否带地址。**只展示，不抓取**——抓图仍然走 `get_image`（第 14 节），
+  地址当外部文本处理，只认 `http(s)`，超长截断，不拼进任何请求、不当路径用。
+- `participation.voiceText`（默认开）：语音调 NapCat 的 `fetch_ptt_text`（QQ 自带的语音转文字）按 `message_id` 取回，
+  4 秒超时、按 message_id 缓存 10 分钟、结果压成一行并截 500 字。取不到、超时、NapCat 不支持都只当“没有转写”，不影响投递。
+- 语料（`qq/corpus`）里只落转写（`[语音转写] …`），不落地址：地址带签名参数、天天变，存下来没用还污染语料。
+- 回归：`test/qq-media.mjs`。
+
