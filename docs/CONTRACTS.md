@@ -12,7 +12,7 @@
 | 宿主 HTTP 前缀 | `/shall/api/`（设置页；控制台的接口见第 9 节） |
 | QQ 体检 | 控制台的 QQ 页（`GET /api/qq/health`，登录后）；OneBot 端口上只有不带身份信息的 `/shall/qq/health` |
 | 桌面端凭据头 / 页面注入全局 | `x-shall-token` / `__DSH_SHALL__` |
-| 工具 | `shall_qq_send`、`shall_qq_send_image`（一条一张图，只发表情包目录 `$DSH_HOME/shall/meme/stickers` 或本会话工作区里的图）、`shall_qq_history`、`shall_qq_summary`、`shall_qq_chats`、`shall_qq_alive`、`shall_qq_memory`、`shall_memory_recall`、`shall_meme_lookup` |
+| 工具 | `shall_qq_send`、`shall_qq_send_image`（一条一张图：`sticker` 按名字发 `$DSH_HOME/shall/meme/stickers` 里的表情包，`path` 发本会话工作区里的图）、`shall_qq_stickers`（只读，列表情包名字）、`shall_qq_history`、`shall_qq_summary`、`shall_qq_chats`、`shall_qq_alive`、`shall_qq_memory`、`shall_memory_recall`、`shall_meme_lookup` |
 | 系统提示段 | `shall:frontdesk`(10)、`shall:profile`(30)、`shall:persona`(31)；上下文快照 `shall:qq-memory`(130) |
 | 技能来源 / 技能名前缀 | `shall` / `shall-` |
 | 凭据名 | `SHALL_ONEBOT_TOKEN` |
