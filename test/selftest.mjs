@@ -1009,6 +1009,8 @@ console.log('='.repeat(72))
     ['this.settingsFile', 'meme/index.js 梗百科设置 settings.json（状态目录/meme）'],
     ['path.dirname(this.settingsFile', 'meme/index.js 梗百科设置所在目录（状态目录/meme）'],
     ['path.dirname(this.dbPath', 'meme/sync.js 联网同步的词库所在目录（状态目录/meme）'],
+    ['importRoot', 'adapt/persona-history.js 导入历史的目录（状态目录/qq/imported）'],
+    ['metaFile', 'adapt/persona-history.js 记录上次从 QQ Chat Exporter 拉历史的时间（状态目录/qq/imported/qce-pulls.json）'],
   ])
   const offenders = []
   const used = new Set()

@@ -283,7 +283,8 @@ console.log('G. 只有 sync.js 会往外发请求')
   }
   walk(libDir)
   const files = [...new Set(offenders.map((o) => o.split(':')[0].replace(/\\/g, '/')))]
-  check('lib 里除了浏览器端代码，只有 meme/sync.js 含出站请求', files.length === 1 && files[0] === 'meme/sync.js', files.join(', '))
+  // qq/qce-client.js 连的是本机的 QQ Chat Exporter（checkLoopback 只放行 127.0.0.1 / localhost / ::1），不出这台电脑
+  check('lib 里除了浏览器端代码，往外发请求的只有 meme/sync.js；qq/qce-client.js 只连本机', files.filter((f) => f !== 'qq/qce-client.js').join() === 'meme/sync.js', files.join(', '))
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
