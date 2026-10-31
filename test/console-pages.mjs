@@ -137,7 +137,7 @@ console.log('A. 群聊页')
   confirmAnswer = true
 
   const selects = byTag(view, 'select')
-  check('已接入的群有档位下拉，五个选项（含盯群），默认选“点名”', selects.length >= 1 && selects[0].childNodes.length === 5 && selects[0].value === 'mention')
+  check('已接入的群有档位下拉，五个选项（含盯群），默认选“活跃”', selects.length >= 1 && selects[0].childNodes.length === 5 && selects[0].value === 'active')
   const modeSelect = selects[0]
   modeSelect.value = 'active'
   await modeSelect.fire('change')

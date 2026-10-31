@@ -270,7 +270,7 @@ QQ 工具在 `execute(args, exec)` 里用 `exec.agent.session.header` 判调用�
 这一层与 privacy 的工具等级叠加，不互相替代。工具：`shall_qq_send`、`shall_qq_history`、`shall_qq_summary`（按需群总结：取某群最近一段时间的聊天，由模型自己写总结）、
 `shall_qq_chats`、`shall_qq_alive`、`shall_qq_memory`、`shall_memory_recall`（按关键词翻记忆，只翻调用方看得到的范围：QQ 会话 = 本聊天 + 本群群友，你自己的会话 = `owner` + `owner:work`）、`shall_meme_lookup`。
 
-点名（`lib/qq/pipeline.js`）：群里默认档位 `mention`，下面几种都算叫 bot，结果写在 `decision.addressedBy`：
+点名（`lib/qq/pipeline.js`）：下面几种都算叫 bot（是否只认点名由群的档位决定，默认档位是 `active`，没被叫也可能接话），结果写在 `decision.addressedBy`：
 `at`（@ bot；@全体成员不算）、`reply`（回复 bot 发过的消息：先查最近 500 条 bot 发出的 message_id，查不到时取回引用原文看发送者）、
 `name`（消息里出现 `participation.aliases` 里的名字；写成“群号:名字”的只在那个群生效）、`poke`（戳一戳 bot，同一会话 60 秒内只响应一次，`participation.poke=false` 关闭）。
 
@@ -321,13 +321,13 @@ engine.noteRecall(chatKey, messageId, { operatorIsBot }) / engine.noteBan(chatKe
 engine.settingsFor(groupId) / engine.snapshot(chatKey?) / engine.ignoreSender(groupId, qq, reason)
 ```
 
-五档（默认 `mention`）：`silent` 只记录；`mention` 被叫到才回；`present` 点名之后，被它回复过的人 `present.minutes` 分钟或 `present.messages` 条之内接着说可以不再 @；
+五档（默认 `active`）：`silent` 只记录；`mention` 被叫到才回；`present` 点名之后，被它回复过的人 `present.minutes` 分钟或 `present.messages` 条之内接着说可以不再 @；
 `active` 没人叫也可能插话；`watch` 盯群：等时机之后，把还没给常驻会话看过的群消息（不含命令、别的 bot 和已经单独交过的点名消息，最多 `watch.messages` 条 / `watch.chars` 字）整批交给常驻会话，
 由主模型自己决定接不接（不调便宜模型）。两次看群至少隔 `watch.minIntervalMs`、每小时最多 `watch.perHour` 次，主动说话另受 `budget.perHour` 约束；常驻会话还在回上一轮（包括被叫到的那一轮）时不叠着送，回完再看；
 看群那一轮默认不引用、不 @，要接哪条由模型写 `<quote id/>`；“连续几次没开口”的提醒在盯群档不发。五层，前四层不调模型：
 
-1. **硬规则**：潜水档不回；被叫到的一律回（同一个人 60 秒内最多 6 次，另一个 bot 连环 @ 10 分钟内最多响应 2 次）；没被叫到时，命令消息、只 @ 了别人、别的 bot 说的、静默时段、被禁言、被绕开的人、对话已收尾，都不接。
-2. **在场状态**：见上。对方在在场期间说了附和/道别（“好的谢谢”“晚安”）就收尾，`closureMs`（默认 20 分钟）内不靠在场状态或概率插话；被叫到照常回，只是提示里带一句“对方像是在收尾”。
+1. **硬规则**：潜水档不回；被叫到的一律回（同一个人 60 秒内最多 6 次，另一个 bot 连环 @ 10 分钟内最多响应 2 次）；没被叫到时，命令消息、只 @ 了别人、别的 bot 说的、静默时段、被禁言、被绕开的人、对话已收尾，都不接。收尾只挡收尾话（附和/道别）：期间只要有人说了一句有内容的新话，立刻解除。
+2. **在场状态**：见上。对方在在场期间说了附和/道别（“好的谢谢”“晚安”）就收尾，`closureMs`（默认 20 分钟）内不再接收尾话；中间有人说了有内容的新话就立刻解除；被叫到照常回，只是提示里带一句“对方像是在收尾”。
 3. **等时机**：没被叫到的先等群里安静 `timing.quietMs`；新消息替换触发点；同一个群同一时间只排一次、只跑一次判断。
 4. **预算**：精力（发言扣 `base + 字数 × perChar`，乘 `1.5 − eagerness`，按时间恢复）、两次发言的最短间隔、每小时主动插话上限、对话疲劳（连续主动聊久了门槛升高）。被叫到时跳过。
 5. **判断**（只在 `active`）：便宜模型按五个维度打分（相关 25%、意愿 20%、社交适宜 20%、时机 15%、连贯 20%）。
@@ -427,7 +427,7 @@ engine.settingsFor(groupId) / engine.snapshot(chatKey?) / engine.ignoreSender(gr
 | `<quote id="消息号"/>` | 引用某条消息回复；号必须是该群最近的消息，否则丢掉 |
 | `【备忘】【目的】…【状态】完成 / 待续 / 跳过【待续】…` | 不发到 QQ。待续（≤3 条，每条 ≤80 字）存成 `intent`（文本带“待续：”前缀，模型来源，置信度 0.5，3 天后过期），下次注入时模型能看到；完成 → 划掉目的相近的待续（`memory.complete`）；跳过 → 当作这轮没开口 |
 
-群里默认引用触发它的那条消息回复（只加在这一回合的第一条），最近 2 分钟内有 ≥3 个不同的人说话时再 @ 提问的人；一条消息超过 `group.reply.maxChars` 就在段落/句末分条，条间按打字速度留间隔。
+群里默认引用触发它的那条消息回复（只加在这一回合的第一条）；**不自动 @ 人**，要 @ 谁由模型自己写 `<at/>`；一条消息超过 `group.reply.maxChars` 就在段落/句末分条，条间按打字速度留间隔。
 连续 `silentReminderAfter`（默认 6）次没开口，下一次提示里追加一句提醒。格式说明写在前台约定里（`REPLY_FORMAT_HELP`），备忘靠模型照着写，没写也没有副作用。
 
 ## 13. 群成员记忆、群概况冷启动、目标归属、交班回看
