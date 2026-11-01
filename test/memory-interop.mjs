@@ -29,7 +29,7 @@ console.log('A. 开关文件')
   check('非法值当关', writeInterop(dir, { readAll: 'yes' }).readAll === false)
 }
 
-console.log('B. shared 碎片直接生效')
+console.log('B. QQ 来源的 shared 碎片：进候选，不直接生效')
 {
   const dir = tmp()
   const mem = createMemory({ dir, store: 'sqlite', log })
@@ -44,9 +44,13 @@ console.log('B. shared 碎片直接生效')
   check('两条都写进去了', out.added === 2, JSON.stringify(out))
   const shared = mem.list({ scope: 'shared' })
   check('shared 那条落进 shared 范围', shared.length === 1 && shared[0].area === 'domain:DNS')
-  check('shared 直接 active（不是候选）', shared[0].status === 'active', shared[0]?.status)
+  // 群里任何人都能说一句“这是通用知识：…”诱导模型标 shared：直接 active 就是跨群泄露 + 持久注入，
+  // 所以 QQ 来源一律降成候选，等主人在控制台转正（docs/CONTRACTS.md §4.4）。
+  check('QQ 来源写的 shared 是候选，不直接生效', shared[0].status === 'candidate', shared[0]?.status)
+  const selected = mem.select(['shared'], 500)
+  check('候选不会被注入', !selected.picked.some((e) => e.text.includes('cloudflare')), JSON.stringify(selected.picked.map((e) => e.text)))
   const own = mem.list({ scope: 'chat:group:100000001' })
-  check('普通碎片还是本群范围', own.length === 1 && own[0].text.includes('搬瓦工'))
+  check('普通碎片还是本群范围、照常生效', own.length === 1 && own[0].text.includes('搬瓦工') && own[0].status === 'active')
   mem.dispose()
 }
 

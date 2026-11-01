@@ -111,7 +111,8 @@ heading('D. 工具门控')
   check('QQ 群会话不能往别的群发消息', typeof run(headers.group, 'shall_qq_send', { chat_type: 'group', chat_id: '999', text: 'hi' }) === 'string')
   check('QQ 群会话不能清空记忆', typeof run(headers.group, 'shall_qq_memory', { chat_type: 'group', chat_id: QQ_GROUP, forget: 'all' }) === 'string')
   check('QQ 群派出的子代理同样受限', typeof run(headers.subagent, 'bash', { command: 'ls' }) === 'string')
-  check('没有 agent 的调用不拦（宿主内部调用）', guard({ name: 'bash', arguments: {} }) === undefined)
+  // fail-closed：没有会话头就判不了等级，和 QQ 侧 callerScope 保持一致，一律拒
+  check('没有 agent 的调用被拒（判不了权限等级）', typeof guard({ name: 'bash', arguments: {} }) === 'string')
 }
 
 const client = consoleClient(base)

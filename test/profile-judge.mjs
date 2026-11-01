@@ -139,6 +139,9 @@ console.log('4. HTTP：五条 /entry/* 路由')
     const unseal = await post('/entry/unseal', { key: marks().find((m) => m.status === 'sealed').key })
     check('POST /entry/unseal 回 200，条目回到画像', unseal.status === 200 && (await unseal.json()).state.profile.entries.some((e) => e.claim === CLAIM_B))
   } finally {
+    // 结尾用 exitCode 自然退出：句柄还在关闭时 process.exit() 会在 Windows 上撞 libuv 断言（async.c:76）。
+    // 断掉 fetch 的 keep-alive 连接，进程才能马上退出
+    server.closeAllConnections()
     await new Promise((resolve) => server.close(resolve))
   }
 }
@@ -146,4 +149,4 @@ console.log('4. HTTP：五条 /entry/* 路由')
 console.log(`结果：${pass} 通过 / ${fail} 失败`)
 host.memory.dispose()
 if (fail === 0) fs.rmSync(tmpRoot, { recursive: true, force: true })
-process.exit(fail === 0 ? 0 : 1)
+process.exitCode = fail === 0 ? 0 : 1

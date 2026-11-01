@@ -1012,6 +1012,11 @@ console.log('='.repeat(72))
     ['importRoot', 'adapt/persona-history.js 导入历史的目录（状态目录/qq/imported）'],
     ['metaFile', 'adapt/persona-history.js 记录上次从 QQ Chat Exporter 拉历史的时间（状态目录/qq/imported/qce-pulls.json）'],
     ['backupFile', 'group/settings.js 把上一份 groups.json 留成 groups.json.bak（状态目录下）'],
+    // core/fs-atomic.js 是**唯一**的通用落盘入口：目标路径全部由调用方传入，而调用方在上面
+    // 都已逐个审过（状态目录下）。这里放行的是它内部的两步：临时文件 → 正式文件。
+    ['from', 'core/fs-atomic.js 原子 rename 的源（同目录、带 pid + 随机串的临时文件）'],
+    ['fd', 'core/fs-atomic.js 往已打开的临时文件句柄写（临时文件在状态目录下）'],
+    ['rotated', 'core/log.js 日志轮转删掉上一份 .1（由日志文件路径派生，状态目录下）'],
   ])
   const offenders = []
   const used = new Set()

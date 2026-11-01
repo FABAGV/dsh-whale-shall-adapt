@@ -165,7 +165,7 @@ console.log('C. 输出过滤：沉默、备忘、@、引用')
 
   reset()
   await turn('p1', [])
-  check('私聊里没有任何正文：仍然补一句“这一轮结束了”（防止以为它死了）', sent.length === 1 && sent[0].includes('这一轮结束了'))
+  check('私聊里没有任何正文：也不补“这一轮结束了”（模型可能已用工具把话发完）', sent.length === 0)
   reset()
   await turn('g1', [])
   check('群里没有正文：不补那句', sent.length === 0)

@@ -9,7 +9,7 @@ DeepSeek Harness（DSH）插件。名字里的 shall 是“应”：**让 AI 应
 
 两边共用一层**统一记忆**，这是核心：你说过的话、你的纠正、群里发生的事，都沉淀成一条条可以被你裁决的记忆，用得越久越贴你。
 
-> **状态**：0.2.1。单元测试和假宿主 / 假 OneBot 的集成测试都过（见“开发与测试”），已在 NapCat + DSH 桌面端上试用过。
+> **状态**：0.3.1。单元测试和假宿主 / 假 OneBot 的集成测试都过（见“开发与测试”），已在 NapCat + DSH 桌面端上试用过。
 
 ## 它做什么
 
@@ -34,14 +34,14 @@ DeepSeek Harness（DSH）插件。名字里的 shall 是“应”：**让 AI 应
 
 ## 安装
 
-一键安装（Windows / PowerShell，从 GitHub Release 下载 `dsh-whale-shall-adapt-0.2.1.tgz`、装进 profile、登记成 bundle，国内自动走加速镜像）：
+一键安装（Windows / PowerShell，从 GitHub Release 下载 tgz、装进 profile、登记成 bundle；默认直连 GitHub，国内可加 `-Mirror ghproxy` 走加速镜像，装之前会校验 SHA256）：
 
 ```powershell
 .\install.ps1                 # 自动挑 profile（desktop 优先）
 .\install.ps1 -Profile web    # 指定 profile
 ```
 
-也可以手动下载 [Release](https://github.com/FABAGV/dsh-whale-shall-adapt/releases) 里的 tgz 后 `.\install.ps1 -File .\dsh-whale-shall-adapt-0.2.1.tgz`。
+也可以手动下载 [Release](https://github.com/FABAGV/dsh-whale-shall-adapt/releases) 里的 tgz 后 `.\install.ps1 -File .\dsh-whale-shall-adapt-0.3.1.tgz`。
 开发机上直接链接源码目录：`dsh plugin --profile <名字> add link:<仓库路径>`。
 
 **和旧插件不能并存**：装之前先卸掉 `dsh-prompt-adapt` 和 `dsh-whale-inurqq`（两个 QQ 插件会抢同一个 6700 端口，同一条消息会被处理两遍）。
@@ -59,7 +59,7 @@ DeepSeek Harness（DSH）插件。名字里的 shall 是“应”：**让 AI 应
 - 所有数据在本机 `$DSH_HOME/shall/`（记忆、群设置、语料、交班束、梗百科词库……）。真实会话日志只读，不会被改动。
 - 语料只存你接入的群，按天分片，默认保留 30 天。
 - 判断模型、群成员整理、群概况会把相关群聊内容发给模型提供方（和主会话同一个信任域）。
-- **插件自己唯一的出站请求**是梗百科的联网查词 / 同步（`cnmeme.wiki` 公开只读接口），默认关；测试守着这一点。
+- **插件自己唯一的出站请求**是梗百科的联网查词 / 同步（`cnmeme.wiki` 公开只读接口），默认关。另有一个**只连本机**的客户端：QQ Chat Exporter（`lib/qq/qce-client.js`，默认 `127.0.0.1`），用来把群友历史导入成人格素材，你手动点才会用。`test/selftest.mjs` 与 `test/no-outbound.mjs` 守着这一点。
 
 ## 配置要点
 
@@ -69,7 +69,7 @@ DeepSeek Harness（DSH）插件。名字里的 shall 是“应”：**让 AI 应
 |---|---|
 | `qq.scope.groups` / `friends` | 接入的群 / 私聊白名单。群默认空 = 一个都不接；私聊 = friends ∪ 配对的主人；`*` 表示全部 |
 | `qq.participation` | `aliases`（群里叫 bot 的名字）、`poke`、`mergeMs`（连发合并，默认 1200）、`knownBots`、`images` |
-| `group.defaultMode` | `silent` / `mention` / `present` / `active`，单个群在控制台改 |
+| `group.defaultMode` | `silent` / `mention` / `present` / `active`（默认）/ `watch`，单个群在控制台改 |
 | `group.judge` | 活跃档的判断模型。默认 provider 留空（跟宿主在用的，账号登录就是 `deepseek-account`）、模型 `deepseek-flash`；用不了时换别的 DeepSeek 线路，再退回宿主默认模型 |
 | `group.members` / `group.coldStart` | 群成员记忆、群概况冷启动 |
 | `outreach` | 主动私聊（默认关）；开关和调参也可以在控制台改 |

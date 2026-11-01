@@ -1,5 +1,53 @@
 # 更新记录
 
+## 0.3.1（2026-11-01）
+
+> 按"整个仓库过一遍"的结果改：先修可靠性，再收发布与文档，最后加强模仿群友。
+
+### 安全
+- **OneBot 没配 token 时拒绝接入**（之前默认放行）。这条通道的尽头是本机 agent：连上来就能伪造"主人私聊"（`user_id` 填主人 QQ 即可套画像、以主人身份派活）、收走 bot 发出的所有消息。现在没 token 一律 401，日志说明怎么配；只在本机调试时可显式打开 `connection.allowNoToken`。token 比较改成常量时间（先各自 SHA-256 再 `timingSafeEqual`），日志不再打印收到的 token 片段；WebSocket 加 8 MB `maxPayload`。
+- **参数上带 token 也算"没配"的窗口收窄**：鉴权信息未就绪时仍然 503（fail-closed），这一条没变。
+- **QQ 来源写 `shared` 降成候选**：`shared` 会注入每个会话，群里任何人说一句"这是通用知识：…"就能让提炼模型标 shared —— 直接生效就是跨群泄露 + 持久提示注入。现在进候选，等主人在控制台转正（`docs/CONTRACTS.md` §4.4 同步改了）。
+- **子代理不再被当成主人会话**：QQ 会话派出的子代理，`chatOfCaller` 以前没传 `lookupHeader`，沿 `parentSession` 找不到归属就落到"主人自己的会话"，于是能读 `owner` 画像、列全部会话、检索全部语料。现在会顺着父会话解析，解析不出来按外部会话处理（不给主人权限）。
+- **来源标注防伪造**：昵称和正文都来自不可信输入。昵称里的换行、括号、"QQ 12345 / 消息号 678"会被清掉；正文里以 `[来自 QQ` / `（插件提示` / `[附：` 等开头的行会被标成「（用户原文）」，模型不会再把它当成插件给的标注。
+- **工具门控拿不到会话头时拒绝**（之前 `return undefined` 全放行）：和 QQ 侧 `callerScope` 的判据统一，宿主任何一条没带 `agent.session.header` 的调用都判不了等级，一律拒。
+- **脱敏补中文写法**：「密码是…」「验证码 482913」「口令：…」、18 位身份证号、过了 Luhn 校验的 16–19 位银行卡号（不过 Luhn 的不动，避免误伤 QQ 号 / 雪花 id）。
+
+### 成本
+- **常驻记忆不再每轮重发**（保住 DeepSeek 前缀缓存）：注入标题从 `[常驻记忆 v<版本号>]` 改成固定的 `[常驻记忆]`，排序键从 `pinned → importance → refs → lastSeenAt → id` 改成 `pinned → importance → id`，渲染缓存键从"范围@版本号"改成"选中条目的内容指纹"。以前同一句话在群里被重复一遍（dup）就会让版本号 +1、顺序重排，注入文本整段变一次，宿主要重新建快照、之后的前缀全部 miss；现在只有选中的内容真的变了才变。
+
+### 修复
+- NapCat 断开后一直连不回来时，插件以前只在日志里留一行 info「连接断开，剩余连接数=0」，没有任何告警（真机上 NapCat 重启后卡在扫码登录 `Login Error ErrCode: 3`，QQ 静默了半小时以上没人发现）。现在断开超过 1 分钟还没连回来就打一条 warn，之后每 30 分钟提醒一次；连回来时日志写明中断了多久；体检显示「NapCat 已断开 N 分钟」，状态快照新增 `offlineSince` / `lastConnectedAt`。插件自己关停时断开的连接不算掉线。
+- 画像饱和暂停期间，每 2 分钟一轮的 tick 都会打一条同样的 info「不生成：画像已达增长上限…」。现在只在进入暂停时打一次，之后降为 debug。
+- `test/qq-reply-flow.mjs` 还在断言私聊里补那句「这一轮结束了」，跟 relay 的新行为（这句已去掉）对不上，改了断言。
+- `test/qce-import.mjs`、`test/profile-judge.mjs` 在 Windows 上偶发退出码 127 / 0xC0000409（libuv `async.c:76` 断言）：HTTP 服务还在关闭时就调用了 `process.exit()`。改成断开 keep-alive 连接、等关闭完成、用 `process.exitCode` 自然退出。
+- **坏的状态文件不再被悄悄清空**：`groups.json`、`bindings.json`、`owner.json`、外联状态、梗检索存档、`memory.json` 解析失败时，以前按空表开始，下一次落盘就把原件和 `.bak` 一起盖掉。现在统一走 `lib/core/fs-atomic.js` 的 `readJsonFile()`：坏文件改名成 `<文件>.corrupt-<时间戳>` 留档，再按空的开始；`memory.json` 两份都坏时两份都留档。
+- **原子写统一了**：临时文件名带 pid + 随机串、写完 `fsync` 再 `rename`（`writeFileAtomic` / `writeJsonAtomic`）。以前多处是固定 `${file}.tmp` 且不 fsync，两个宿主共用 `DSH_HOME` 或突然断电时可能留下半截 JSON。
+- **两个定时任务不再能崩掉宿主**：`groupJobs.tick()` / `idle.tick()` 的 rejection 以前没人接（同步 try/catch 接不住 promise），Node 默认会让整个 DSH 进程退出；现在都挂了 `.catch()`。
+- **失败退避**：空闲整理、群成员整理失败后以前每分钟 / 每 5 分钟拿同一段对话重跑一次主模型；现在 5 分钟起步、翻倍、封顶 6 小时，成功一次清零。
+- **卸载后在途的生成会被中止**：画像生成最长 300 秒，以前卸载后仍会跑完并用旧内存盖掉新实例的 `state.json`。现在 apply 里有一个 AbortController，卸载时中止；记忆层 `dispose()` 之后拒绝写入。
+- **`node:sqlite` 改成懒加载**：以前是静态 import，`engines` 写的 `>=20` 里 Node 20–22.12 上整个插件加载失败（哪怕配置是 `memory.store=json`）。现在拿不到就退回 json。
+- **日志轮转**：`plugin.log`（两份）以前无限增长、每行都同步 mkdir + append。现在 2 MB 轮转成 `.1`（只留一代），目录只建一次。
+- **`seeds.json` 的幂等 bug**：种子里含会被脱敏的内容（IP、口令）时，写进去的正文和种子原文对不上，每次重启都重复写一条。现在按脱敏后的文字比对。
+
+### 修复（发布与文档）
+- 删掉 `lib/adapt/plugin.js.orig-20261101`、`lib/conversation/relay.js.orig-20261101`（会进发布包的 143 KB 死代码）；`.gitignore` 加 `*.orig`；`files` 改成扩展名白名单，`npm pack` 结果核过只剩该发的文件。
+- `install.ps1`：默认直连 GitHub（`-Mirror ghproxy` 才走镜像）；下载后校验 SHA256（`-Sha256` 或 release 里的 `<tgz>.sha256`，不匹配就删文件中止，复用的本地缓存也验）；拿不到默认版本时不再偷偷改装 main 分支归档，而是报错并说明三种绕法；默认版本改到 `v0.3.1`。
+- CI：矩阵改成 Ubuntu + Windows × Node 20/22/24，直接跑 `npm test`（之前是手写循环、不查"结果"行、不跑 Windows、不跑 QQ 集成测试），加一次入口加载冒烟和发布包内容检查；发版时一起上传 `.sha256`。
+- `tools/run-tests.mjs`：单文件超时（默认 120 s）、监听 `close` 而不是 `exit`（输出不再可能被截断）、每个测试的临时 HOME 跑完就删、启动时先检查 `@deepseek-ai/cordis` / `schemastery` 能不能解析（缺了直接退出码 2，不再伪装成 15 个测试失败）。
+- 排障脚本挪到 `tools/diag/`；`verify-incremental.mjs` 里写死的 `R:/…` 盘路径和 `lib/sessions.js` 改对了，并跟随 `DSH_HOME`。
+- **设置页里的相似度阈值真正生效了**：`qq.conversation.fragmentMergeJaccard` / `fragmentAskJaccard` 以前只在测试路径里传进记忆层，生产用的共享记忆永远用写死的 0.82 / 0.3（改了没效果）。现在 `lib/index.js` 建共享记忆时传入，并有测试守着。
+- 文档对齐：README 状态 / tgz 版本号 / 出站请求说明 / 群档位默认值补全；CONTRACTS 的 `group.defaultMode` 改成默认 `active`；`lib/group/schema.js` 的字段说明也改了；新增 CONTRACTS §4.2.2 写清 `seeds.json` 的格式、范围与幂等规则。
+
+### 新增
+- `test/onebot-offline.mjs`：断线看门狗的测试（告警阈值、重复提醒、重连报时长、关停不误报）。
+- **模仿群友的提示词加强**：生成提示词要求每句都指回具体场景、写出节奏（怎么开口、句子多长、标点、连发）、照抄三个只属于他的说法，并给出"放到谁身上都成立"的反例清单；挑场景要求覆盖被夸 / 被调侃 / 求助 / 抱怨冷场四类；分析要求"找不到依据就写看不出"。修订提示词要求笼统反馈（"不像""太官方"）先指出最不像的两处再改，不整篇重写。
+- **「说话习惯」随人格注入**：`describeHabit()` 从本地实算的统计里挑出能照着做的几条（消息长度、标点比例、表情、连发、口头常用及其出现比例），随版本存下来，注入文本里多一段"他的说话习惯（按真实发言统计）"。确定性、不花模型钱，注入字节稳定（不影响系统提示缓存）。
+- **`tools/import-chat.mjs` + `lib/adapt/chat-record-import.js`：把 QQ 导出的聊天记录转成人格素材**。支持 JSON / JSONL / 几种常见 txt 排版（`时间 昵称(QQ)` 表头、`[时间] 昵称: 正文`、只有 `昵称：正文` 时按文件时间倒推、无表头续行），写到 `$DSH_HOME/shall/qq/imported/<group|private>-<号>/`，与 QQ Chat Exporter 导入同一目录、同一去重判据。认出是 QQNT 备份（zip 里是 SQLCipher 加密的 SQLite）或 HTML/MHT 导出时明确拒绝并说清怎么导。
+### 新增
+- **`shall_qq_handoff`：主人可以点名换一台会话**（来自 DSH 的自主热更，已审合并）。自动交班只在上下文用到阈值时发生；现在主人可以在自己的 QQ 私聊里说一句就换。工具只**登记意图**，真正的交班仍然走 `turn/end` —— 回合进行中归档会话会让这一轮的回复无处可投。跳过的是三道自动判据（阈值、这一代的最小增长、会话忙不忙），不跳过冻结闸门（同一会话正在交班时直接拒绝）。只对**主人自己的私聊**开放（用 owner 判身份，不靠提示词），群里的任何人都触发不了。新增 `test/qq-handoff-force.mjs`（12 项）。
+- `test/fs-atomic.mjs`、`test/reliability.mjs`、`test/memory-seeds.mjs`、`test/no-outbound.mjs`（递归扫整个 `lib/` 看有没有新的出站请求）、`test/index-similarity.mjs`、`test/persona-prompt.mjs`、`test/chat-record-import.mjs`、`test/onebot-auth.mjs`、`test/label-forgery.mjs`。
+
 ## 0.3.0（2026-11-01）
 
 ### 新增

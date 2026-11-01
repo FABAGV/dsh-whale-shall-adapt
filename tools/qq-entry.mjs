@@ -1218,7 +1218,9 @@ const qqStatus = createQqStatus()
 const groupSettings = createGroupSettings({ dir: STATE_DIR })
 mod.default.apply(root, {
   logLevel: 'debug',
-  connection: { mount: 'own', host: '127.0.0.1', reversePort: PORT, token: '' },
+  // 本机测试台不校验来源：连接层从 0.3.1 起默认拒绝"没配 token"的接入（fail-closed），
+  // 这里显式打开 allowNoToken，等于把"本机调试"这个口径写进测试配置。
+  connection: { mount: 'own', host: '127.0.0.1', reversePort: PORT, token: '', allowNoToken: true },
   tasks: { workspaceRoot: WORKSPACE_ROOT },
   scope: { groups: ['*'], friends: ['*'], blockedGroups: ['99999'] },
   advanced: { stateDir: STATE_DIR },
@@ -2657,8 +2659,10 @@ if (CONV) {
     const c1Agent = { session: { id: c1NewestRoot }, id: c1NewestRoot }
     const asm1 = services.systemPrompt.assemble({ agent: c1Agent })
     const snap1 = asm1.contexts.find((c) => c.name === 'shall:qq-memory')?.text ?? ''
-    v3Checks.push(['N7-d 常驻记忆渲染出了内容', snap1.length > 0 && snap1.includes('[常驻记忆 v')])
-    v3Checks.push(['N7-e 渲染里带稳定锚 [常驻记忆 vN]', /^\[常驻记忆 v\d+\]/.test(snap1)])
+    v3Checks.push(['N7-d 常驻记忆渲染出了内容', snap1.length > 0 && snap1.includes('[常驻记忆]')])
+    // 标题**不带**版本号：版本号每次写入都 +1（含重复话），带上它等于每轮都换一段新文本，
+    // 宿主的前缀缓存全失效。稳定性改由"内容键 + 逐字节相同"来保证（见下面 N7-f）。
+    v3Checks.push(['N7-e 渲染里的标题固定为 [常驻记忆]', /^\[常驻记忆\]/.test(snap1)])
 
     // 连续两步：文本必须**逐字节相同**，否则每一步都会 append 一条新 user 消息
     let byteStable = true

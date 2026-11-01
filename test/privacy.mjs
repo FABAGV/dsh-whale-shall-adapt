@@ -114,7 +114,9 @@ console.log('D. 工具门控：仅聊天')
   check('shall_qq_memory 不能删', typeof exec(GROUP, 'shall_qq_memory', { chat_type: 'group', chat_id: '123456', forget: 'all' }) === 'string')
   check('web_search 放行', exec(GROUP, 'web_search', { query: 'x' }) === undefined)
   check('你自己的会话一概不拦', exec(OWNER, 'bash', { command: 'rm -rf /' }) === undefined)
-  check('没有会话头的调用不拦', policy.guard({ name: 'bash', arguments: {} }) === undefined)
+  // 拿不到会话头 = 判不了权限等级。以前全放行（宿主任何一条没带 header 的路径都能开 shell），
+  // 现在和 QQ 侧 callerScope 一致：fail-closed。
+  check('没有会话头的调用被拒（不再默认放行）', typeof policy.guard({ name: 'bash', arguments: {} }) === 'string')
 }
 
 console.log('E. 工具门控：受限（路径与网址）')

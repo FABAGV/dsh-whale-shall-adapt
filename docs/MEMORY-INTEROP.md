@@ -7,7 +7,8 @@
 > - SQLite 不再只是“索引”，而是**真相源**（`memory.db`），`memory.json` 退成每次落盘的导出备份；
 > - 新增 `area`（书架）与 `shared` 范围；`memory.store: json | sqlite` 开关，默认 json（部署时切）；
 > - 全文召回用 FTS5 trigram，`memory.recall()` 先全文、再用字符相似度补分；
-> - 代码：`lib/memory/sqlite-store.js`、`lib/memory/areas.js`、`test/memory-sqlite.mjs`（27 条）。
+> - 手写种子 `$DSH_HOME/shall/memory/seeds.json` 启动时补进记忆层（`lib/adapt/memory-seeds.js`，CONTRACTS §4.2.2）；
+> - 代码：`lib/memory/sqlite-store.js`、`lib/memory/areas.js`、`lib/adapt/memory-seeds.js`、`test/memory-sqlite.mjs`（27 条）。
 >
 > 依据：`NEXT-STEPS.md` §4、`docs/CONTRACTS.md` §4（统一记忆层）、§5（隐私与可见范围）、§8（群聊）。
 > 事实核对：宿主运行时 Node `v24.21.0` 自带 `node:sqlite`，FTS5 的 `unicode61` 与 `trigram` 两种分词都可用（本机实测，见 §7.1）。

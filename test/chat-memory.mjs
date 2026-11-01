@@ -72,11 +72,16 @@ console.log('C. 渲染')
 {
   const a = cm.renderFor('private:5', 2000)
   const b = cm.renderFor('private:5', 2000)
-  check('带版本锚，两次逐字节相同', /^\[常驻记忆 v\d+\]/.test(a.text) && a.text === b.text && a.count > 0)
+  check('标题固定、两次逐字节相同', /^\[常驻记忆\]/.test(a.text) && a.text === b.text && a.count > 0)
   check('别的会话渲染不到', !cm.renderFor('group:9', 2000).text.includes('医院'))
   const before = cm.keyOf('private:5')
   store.recordUsage(cm.forScope('private:5').map((f) => f.id), 'seen')
   check('记账不改缓存键', cm.keyOf('private:5') === before)
+  // 同一句话又说了一遍（dup）会让版本号 +1、refs / lastSeenAt 变化：
+  // 这些都不是"内容变了"，注入文本必须一个字节都不动，否则宿主的前缀缓存每轮失效。
+  cm.absorb({ scope: 'private:5', gen: 4, fragments: [{ text: '周五下午要去医院复查', tag: 2, kind: 'constraint' }] })
+  check('重复写入同一句话：缓存键不变', cm.keyOf('private:5') === before, cm.keyOf('private:5'))
+  check('重复写入同一句话：渲染文本不变', cm.renderFor('private:5', 2000).text === cm.renderFor('private:5', 2000).text)
   cm.absorb({ scope: 'private:5', gen: 4, fragments: [{ text: '下个月搬家去杭州', tag: 1, kind: 'intent' }] })
   check('内容变了缓存键跟着变', cm.keyOf('private:5') !== before)
   check('预算为 0 不注入', cm.renderFor('private:5', 0).text === '')

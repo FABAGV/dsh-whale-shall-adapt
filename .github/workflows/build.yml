@@ -22,34 +22,49 @@ permissions:
 
 jobs:
   verify:
-    name: 测试
-    runs-on: ubuntu-latest
+    name: 测试（${{ matrix.os }} / Node ${{ matrix.node }}）
+    # 今天修掉的两类问题都只在特定平台出现（Windows 上 process.exit 撞 libuv 断言；
+    # Node 22 之前没有 node:sqlite）。只跑 Ubuntu + Node 24 会一直漏掉它们。
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['20', '22', '24']
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: ${{ matrix.node }}
 
       # 宿主在运行时提供的两个 peer：CI 里从 npm 装（都已发布）。
       - name: 装宿主提供的 peer 依赖
         run: npm install --no-save --no-package-lock @deepseek-ai/cordis@4 @deepseek-ai/schemastery@3
 
-      # parity 需要本机真实的会话语料当标尺（它在找不到标尺时**判失败而不是跳过**，
-      # 这是对的：CI 上没有语料就只能不跑，而不是假装比对通过）。
-      # inspect-signals / verify-incremental 是排障脚本，会读写真实 $DSH_HOME。
-      # 走 apply() 的测试不需要本机控制台；需要它的 console-e2e 自己用随机端口启动。
+      # 冒烟：老 Node 上整个插件必须还能加载（node:sqlite 曾经是静态 import，
+      # Node 20–22.12 上一加载就炸，哪怕配置是 memory.store=json）。
+      - name: 入口冒烟（加载不抛错）
+        run: node -e "import('./lib/index.js').then(m => { if (!m.default?.apply) throw new Error('没有 apply'); console.log('入口 OK') })"
+
+      # 全量单元测试走仓库自己的 runner：单文件超时、监听 close、隔离 HOME、
+      # 缺 peer 时明确报错，而不是十几个 ERR_MODULE_NOT_FOUND 混在真失败里。
+      # QQ 入口集成测试要真实端口，只在 Ubuntu 上跑（Windows runner 上耗时且易受端口占用影响）。
       - name: 跑测试
         env:
           DSH_SHALL_CONSOLE: 'off'
+        run: node tools/run-tests.mjs ${{ matrix.os == 'windows-latest' && '--no-qq' || '' }}
+
+      - name: 打包清单（不能混进 .orig / tgz 之类的垃圾）
+        if: matrix.os == 'ubuntu-latest' && matrix.node == '24'
         run: |
           set -e
-          for file in test/*.mjs; do
-            case "$file" in
-              test/parity.mjs|test/inspect-signals.mjs|test/verify-incremental.mjs) echo "跳过 $file"; continue ;;
-            esac
-            echo "== $file"
-            node "$file"
-          done
+          npm pack --dry-run --json > pack.json
+          node -e "
+            const j = require('./pack.json')[0];
+            const bad = j.files.map(f => f.path).filter(p => /\.(orig|bak|tmp|tgz)$/.test(p));
+            if (bad.length) { console.error('发布包里混进了：', bad.join(', ')); process.exit(1) }
+            console.log('发布包', j.entryCount, '个文件，', (j.size/1024).toFixed(0), 'KB');
+          "
 
   release:
     name: 发版
@@ -67,18 +82,23 @@ jobs:
       # 产物与 npm 发布的是同一个包形状（`files` 字段决定内容），
       # 所以 asset 名字必须与 README / install.ps1 里写的约定一致：
       #   dsh-whale-shall-adapt-<version>.tgz
-      - name: 打包
+      # 同时产出 `.sha256`：install.ps1 默认会下载它来校验（镜像通道可被篡改，
+      # 而插件跑起来拥有宿主 agent 的文件 / shell 能力）。
+      - name: 打包 + 校验和
         run: |
           set -e
           npm pack
-          ls -l ./*.tgz
+          tgz=$(ls ./*.tgz)
+          sha256sum "$tgz" > "$tgz.sha256"
+          cat "$tgz.sha256"
+          ls -l ./*.tgz*
 
       - name: 挂到 GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
-          gh release create "$GITHUB_REF_NAME" ./*.tgz \
+          gh release create "$GITHUB_REF_NAME" ./*.tgz ./*.tgz.sha256 \
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
             --verify-tag

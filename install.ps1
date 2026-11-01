@@ -12,7 +12,10 @@
         `rejectElectronProfile()` 会**直接拒绝**这个 profile 名。
 
     这个脚本把"下载 → 装进 profile → 登记成 bundle"三步合成一件事，并且：
-      · 走 GitHub 加速镜像（实测国内直连 codeload 只有 30-50 KB/s，镜像 300+ KB/s）；
+      · 默认**直连 GitHub**；国内直连慢时可显式 `-Mirror ghproxy` 走加速镜像
+        （镜像只在你点名时才用：插件跑起来拥有宿主 agent 的文件 / shell 能力，
+         没有校验的第三方中转不能被默默用作默认通道）；
+      · 下载后校验 SHA256（`-Sha256` 或 release 里同名的 `.tgz.sha256` 资产），不匹配就删掉并中止；
       · 用 DSH 自带的 node + pnpm（与插件管理器同一套，lockfile 版本一致）；
       · 把 tgz 留在 profile 目录内并作为**本地文件依赖**安装 —— 之后任何一次
         `pnpm install` 都不需要网络，也不会因为镜像失效而重装失败。
@@ -20,8 +23,9 @@
     ── 用法 ────────────────────────────────────────────────────────────────
         .\install.ps1                      # 自动挑 profile（desktop 优先），装默认版本
         .\install.ps1 -Profile web         # 指定 profile
-        .\install.ps1 -Tag main            # 装 main 分支最新代码（不依赖 release）
-        .\install.ps1 -File .\dsh-whale-shall-adapt-0.2.1.tgz   # 用本地 tgz
+        .\install.ps1 -Mirror ghproxy      # 国内直连慢时走加速镜像
+        .\install.ps1 -Tag main            # 装 main 分支最新代码（内容会变、无法校验，仅排障用）
+        .\install.ps1 -File .\dsh-whale-shall-adapt-0.3.1.tgz -Sha256 <64 位 hash>
         .\install.ps1 -Uninstall           # 卸载（保留用户数据 ~/.dsh/shall）
         .\install.ps1 -WhatIf              # 只打印会做什么
 #>
@@ -30,18 +34,21 @@ param(
     # 目标 profile 名；不传则按 $env:DSH_PROFILE → desktop → web 的顺序猜
     [string]$Profile,
 
-    # GitHub release tag（默认桶里那个）；`main` = 直接用分支归档，不依赖 release
-    [string]$Tag = 'v0.2.1',
+    # GitHub release tag（默认桶里那个）；`main` = 直接用分支归档，不依赖 release（内容会变）
+    [string]$Tag = 'v0.3.1',
 
-    # 下载通道：auto 依次尝试 ghproxy → ghfast → ghproxynet → 直连
-    [ValidateSet('auto', 'ghproxy', 'ghfast', 'ghproxynet', 'direct')]
-    [string]$Mirror = 'auto',
+    # 下载通道：默认直连；-Mirror ghproxy|ghfast|ghproxynet 走加速镜像；auto = 直连失败再依次试镜像
+    [ValidateSet('direct', 'auto', 'ghproxy', 'ghfast', 'ghproxynet')]
+    [string]$Mirror = 'direct',
 
     # 直接给一个 tgz URL（仍会套用镜像前缀）
     [string]$Url,
 
     # 直接给一个本地 tgz 路径
     [string]$File,
+
+    # 发布方给的 SHA256（64 位十六进制）。不给时会尝试下载 <tgz>.sha256
+    [string]$Sha256,
 
     [switch]$Uninstall,
 
@@ -170,7 +177,8 @@ function Get-TarballUrl([string]$TagName) {
 }
 
 function Invoke-Download([string]$Target, [string]$Destination) {
-    $order = if ($Mirror -eq 'auto') { @('ghproxy', 'ghfast', 'ghproxynet', 'direct') } else { @($Mirror) }
+    # 默认只走直连；`auto` 才是"直连失败再依次试镜像"。镜像只有用户点名时才用。
+    $order = if ($Mirror -eq 'auto') { @('direct', 'ghproxy', 'ghfast', 'ghproxynet') } else { @($Mirror) }
     $errors = @()
     foreach ($name in $order) {
         $prefix = $MirrorPrefixes[$name]
@@ -192,6 +200,48 @@ function Invoke-Download([string]$Target, [string]$Destination) {
         }
     }
     throw "所有下载通道都失败：`n  " + ($errors -join "`n  ")
+}
+
+# ── 校验和 ────────────────────────────────────────────────────────────────
+<#
+    插件装进来之后拥有宿主 agent 的文件 / shell 能力，所以"下载到的到底是哪一版"必须能验。
+
+    校验值来源（按优先级）：
+      1. `-Sha256` 参数（你自己从 release 页面抄的）；
+      2. release 里同名的 `<tgz>.sha256` 资产（CI 发版时一起上传，格式同 `sha256sum`）。
+    取不到就明说"跳过校验"，不假装验过了。**不匹配一律删掉文件并中止**。
+#>
+function Get-FileSha256([string]$Path) {
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+}
+
+function Resolve-ExpectedHash([string]$TargetUrl) {
+    if ($Sha256) { return $Sha256.Trim().ToLowerInvariant() }
+    # 分支归档没有 release 资产可对，跳过
+    if (-not $TargetUrl -or $TargetUrl -match '/archive/') { return $null }
+    $hashUrl = "$TargetUrl.sha256"
+    $temp = Join-Path ([IO.Path]::GetTempPath()) ("shall-sha-" + [guid]::NewGuid().ToString('N'))
+    try {
+        Invoke-Download -Target $hashUrl -Destination $temp
+        $text = Get-Content -LiteralPath $temp -Raw -Encoding UTF8
+        if ($text -match '([0-9a-fA-F]{64})') { return $Matches[1].ToLowerInvariant() }
+        Say "$hashUrl 里没找到 64 位 hash，跳过校验" warn
+    } catch {
+        Say "没取到发布方的 .sha256（这个版本可能没传），跳过校验；要严格校验请用 -Sha256" warn
+    } finally {
+        if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue }
+    }
+    return $null
+}
+
+function Assert-Hash([string]$Path, [string]$Expected) {
+    if (-not $Expected) { return }
+    $actual = Get-FileSha256 $Path
+    if ($actual -ne $Expected) {
+        Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+        throw "SHA256 不匹配，已删除下载的文件：`n  期望 $Expected`n  实际 $actual`n  可能是镜像被篡改或下载不完整。换个通道（-Mirror direct）或手动下载后用 -File 重试。"
+    }
+    Say "SHA256 校验通过" ok
 }
 
 # ── profile 清单读写 ──────────────────────────────────────────────────────
@@ -318,6 +368,7 @@ if ($File) {
     # 绝对路径当"已有文件"会得到一个指向不存在位置的 spec（实测 pnpm ENOENT）。
     $localTgz = Join-Path $packageDir (Split-Path $source -Leaf)
     Say "用本地文件：$source"
+    Assert-Hash $source $(if ($Sha256) { $Sha256.Trim().ToLowerInvariant() } else { $null })
     if ($WhatIf) {
         Say "（WhatIf）会把它复制到 $localTgz"
     } elseif ((Get-FileHash -LiteralPath $source).Hash -ne $(if (Test-Path -LiteralPath $localTgz) { (Get-FileHash -LiteralPath $localTgz).Hash } else { '' })) {
@@ -332,23 +383,22 @@ if ($File) {
     if (-not $WhatIf) { New-Item -ItemType Directory -Force -Path $packageDir | Out-Null }
     $localTgz = Join-Path $packageDir $leaf
     Say "目标：$targetUrl"
+    $expectedHash = Resolve-ExpectedHash $targetUrl
     if ($WhatIf) {
         Say "（WhatIf）会下载到 $localTgz"
     } elseif (Test-Path -LiteralPath $localTgz) {
         Say "本地已有同版本包，跳过下载（想重下就删掉它）：$localTgz"
+        # 复用的缓存同样要验：profile 里的 tgz 可能被人改过
+        Assert-Hash $localTgz $expectedHash
     } else {
         try {
             Invoke-Download -Target $targetUrl -Destination $localTgz
         } catch {
-            # 默认 tag 指向的那个 release 可能还没建出来（或镜像还没同步到它）。
-            # 只在"调用者没显式指定版本"时回退到分支归档：显式点了某个版本却装成
-            # 另一个版本，比直接失败更糟。
-            if ($PSBoundParameters.ContainsKey('Tag')) { throw }
-            Say "默认版本取不到（release 可能还没建），回退到 main 分支归档" warn
-            $targetUrl = Get-TarballUrl 'main'
-            $localTgz = Join-Path $packageDir (Split-Path $targetUrl -Leaf)
-            Invoke-Download -Target $targetUrl -Destination $localTgz
+            # 不再自动改装 main 分支归档：那不是用户点的那一版，内容和版本号都会漂，
+            # 也验不了 hash。宁可失败并说清怎么绕。
+            throw "下载 $targetUrl 失败。可以：1) 加 -Mirror ghproxy 换通道；2) 手动下载 tgz 后用 -File 指定；3) 排障时才用 -Tag main（内容会变、不校验）。`n$($_.Exception.Message)"
         }
+        Assert-Hash $localTgz $expectedHash
     }
 }
 

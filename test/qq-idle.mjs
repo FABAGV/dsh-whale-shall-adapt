@@ -37,6 +37,8 @@ const say = (role, text) => events.push({
 const agent = { status: 'idle', inbox: { nextTurn: [], nextStep: [] }, options: { provider: 'fake', model: 'fake' } }
 const llmCalls = []
 let llmReply = () => ({ fragments: [], drop: [] })
+/** 让下一次模型调用以"出错"结束，用来验失败退避 */
+let llmFail = false
 const ctx = {
   get(name) {
     if (name === 'sessionQuery') return { readSession: async () => ({ events: events.slice() }) }
@@ -45,6 +47,10 @@ const ctx = {
       return {
         async *stream(options) {
           llmCalls.push(options.messages[0].content[0].text)
+          if (llmFail) {
+            yield { type: 'finish', reason: { kind: 'error', failure: { message: '模型炸了' } } }
+            return
+          }
           yield { type: 'text-delta', index: 0, text: JSON.stringify(llmReply()) }
           yield { type: 'finish', reason: { kind: 'stop' } }
         },
@@ -170,6 +176,31 @@ console.log('G. 一次只跑一个')
   await first
   check('只调用了一次模型', llmCalls.length === 3)
   check('模型说没有值得记的：不算失败，水位线照样推进', state.get('private', '5').lastExtract.seq === seq)
+}
+
+console.log('H. 失败退避')
+{
+  for (let i = 0; i < 3; i += 1) {
+    say('user', `第 ${i} 件新事情：周末去爬山`)
+    idle.noteUserPrompt('s1')
+  }
+  clock += 25 * MIN
+  llmFail = true
+  const before = llmCalls.length
+  const markBefore = state.get('private', '5').lastExtract.seq
+  const run = await idle.tick()
+  check('模型出错：本次整理失败', run?.ok === false, JSON.stringify(run))
+  check('失败后水位线不动', state.get('private', '5').lastExtract.seq === markBefore)
+  check('没有无限重试：一次 tick 最多两次模型调用', llmCalls.length - before <= 2, String(llmCalls.length - before))
+  check('失败后立刻不再到期（进入退避）', idle.due().length === 0)
+  clock += 4 * MIN
+  check('4 分钟时仍在退避', idle.due().length === 0)
+  clock += 2 * MIN
+  check('6 分钟后允许重试', idle.due().length === 1)
+  llmFail = false
+  llmReply = () => ({ fragments: [], drop: [] })
+  const again = await idle.tick()
+  check('恢复后成功、退避清零', again?.ok === true && idle.backoff.size === 0 && idle.due().length === 0)
 }
 
 store.dispose()

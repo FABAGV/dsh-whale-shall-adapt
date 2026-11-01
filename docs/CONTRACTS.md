@@ -52,7 +52,7 @@ logLevel: info                      # 两边共用
 stateDir / sessionsRoot / signals / profile / scan / inject / privacy / console / persona / skills
 # ── QQ 通道与常驻对接会话
 qq:
-  connection:   { mount, host, reversePort: 6700, reversePath, tokenRef: SHALL_ONEBOT_TOKEN, token, callTimeoutMs }
+  connection:   { mount, host, reversePort: 6700, reversePath, tokenRef: SHALL_ONEBOT_TOKEN, token, allowNoToken: false, callTimeoutMs }
   scope:        { groups: [], friends: [], blockedGroups: [], blockedFriends: [] }   # 默认一个群都不接；'*' = 全部；私聊 = friends ∪ 配对的主人
   participation: { privateMode, aliases: [], poke: true, mergeMs: 1200, knownBots: [], images: true, maxImages: 3, maxImageBytes: 4194304, mediaUrls: true, voiceText: true }
   tasks:        { workspaceRoot, prefix, chatPrefix }
@@ -63,7 +63,7 @@ qq:
   advanced:     { dedupeWindowMs, dedupeMaxEntries, relayFlushMs, stateDir }
 # ── 群聊回复决策（第 8 节）
 group:
-  defaultMode: mention              # silent | mention | present | active | watch
+  defaultMode: active               # silent | mention | present | active | watch（默认 active，见 lib/group/config.js）
   watch:       { minIntervalMs: 30000, perHour: 40, messages: 30, chars: 3000,
                  activeIntervalMs: 10000, conversationWindowMs: 300000, relaxMs: 600000, activePerHour: 120 }
   judge:       { provider: '', model: deepseek-flash, timeoutMs: 15000 }   # provider 留空 = 跟宿主在用的 provider
@@ -167,9 +167,22 @@ memory.export(query) / memory.revision(scope) / memory.onChange(listener) / memo
 - **书架 `area`**：记忆放在哪个书架，和 `scope`（谁能看）正交。模型可以在写入时选（`observe({ area })`），
   没给就按 scope 推默认：`owner*` → 同名、`chat:*` → 它自己、`member:<群号>:<QQ>` → `group:<群号>`。
   跨群的学问用自定义书架（如 `domain:DNS`、`skill`），全部放在 `shared` 范围里 —— 用户 2026-11-01 定的默认：所有人可见。
-- **`shared` 范围**：任何会话（DSH、主人私聊、群聊）都能读；只有主人侧（DSH 会话 / 控制台）能写，QQ 来源写 `shared` 会被拒。
+- **`shared` 范围**：任何会话（DSH、主人私聊、群聊）都能读；只有主人侧（DSH 会话 / 控制台）写的直接生效。QQ 来源可以写，但 `observe()` 一律降成**候选**，等主人在控制台转正（2026-11-01 改：以前是直接生效，群成员说一句"这是通用知识：…"就能跨群泄露 + 持久注入）。
 - **召回**：sqlite 模式下 `memory.recall()` 先走 FTS5（中文按 trigram 子串命中），再用字符相似度补分排序；
   全文没命中、或查询不到 3 个字时回落 LIKE / 全表相似度 —— 关掉索引时行为与旧版一致。
+
+### 4.2.2 手写种子 `seeds.json`（`lib/adapt/memory-seeds.js`）
+
+给用户一个**不用等交班、不用反复重启**的写记忆入口：在 `$DSH_HOME/shall/memory/seeds.json` 里写
+```json
+{ "entries": [ { "scope": "shared", "area": "domain:DNS", "kind": "note", "text": "内网 DNS 是 10.0.0.2" } ] }
+```
+插件启动时（`lib/adapt/plugin.js` 的 `apply`）把这些条目补进记忆层：
+
+- `scope` 缺省是 `shared`，`area` / `kind` 可省（`kind` 不认识就按 `note`），`text` 必填。
+- 写入身份是 `actor: 'user:seeds'`、`origin: 'user'` —— 和你自己在控制台确认过的记忆同级：生成器不会撤回、降级或老化删除。
+- **幂等**：同一 scope 下已有完全相同文字就跳过，所以这个文件可以一直留着当"我的固定设定"，重启不会重复写、也不会把账本刷大。
+- 读不懂 / 写不进去只记一条 warn，绝不影响启动。删掉某条种子不会删掉已经写进记忆的那条 —— 要撤回请在控制台裁决。
 
 ### 4.3 相似度阈值（实测，10 组中文句子）
 
@@ -197,7 +210,7 @@ memory.export(query) / memory.revision(scope) / memory.onChange(listener) / memo
 - 群里**主人自己**说的话按群友处理，写 `member:<群号>:<主人QQ>`，不进主人的三片（群里说的话是在给群里的人看）。
 - 计算可见范围的唯一入口是 `privacy.scopesVisibleTo(header)`（第 5 节）。
 - **`shared`（所有人可见）**：跨聊天的学问、做法放这里。所有会话都读得到（`chat-memory.readScopes` 与主人侧注入的范围里都加了它）；
-  写入只允许主人侧（DSH 会话 / 控制台），QQ 来源写 `shared` 被 `observe()` 拒掉 —— 群里的内容不能借这个口子漏到别的群。
+  写入只允许主人侧（DSH 会话 / 控制台）直接生效，QQ 来源写 `shared` 被 `observe()` 降成候选 —— 群里的内容不能借这个口子漏到别的群。
 
 ### 4.5 主人的三片记忆
 

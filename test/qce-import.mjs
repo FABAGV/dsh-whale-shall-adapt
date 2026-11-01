@@ -174,8 +174,11 @@ console.log('E. 本机客户端 + 拉历史')
   check('QCE 出错：抛出原因（生成人格那边接住、退回本地语料）', await pullMemberHistory({ qce, importRoot, source, days: 365, now: () => t }).then(() => false, (e) => e.message.includes('boom')))
   check('没开 QCE：跳过并说明', (await pullMemberHistory({ qce: null, importRoot, source, days: 30 })).reason.includes('没有开启'))
   check('合并转发里只有名字的人：没法按人导', (await pullMemberHistory({ qce, importRoot, source: { ...source, memberId: 'name:某人' }, days: 30 })).reason.includes('没有 QQ 号'))
-  server.close()
+  // 结尾用 exitCode 自然退出：句柄还在关闭时 process.exit() 会在 Windows 上撞 libuv 断言（async.c:76）。
+  // 断掉 keep-alive 连接，进程才能马上退出
+  server.closeAllConnections()
+  await new Promise((resolve) => server.close(resolve))
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)
-process.exit(fail ? 1 : 0)
+process.exitCode = fail ? 1 : 0

@@ -7,9 +7,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 
-const { SessionScanner } = await import('file:///R:/dsh-whale-shall-adapt/lib/sessions.js')
+import { SessionScanner } from '../../lib/adapt/sessions.js'
 
-const sessionsRoot = path.join(os.homedir(), '.dsh', 'sessions')
+// 跟着 DSH_HOME 走：排障脚本也要能在隔离的临时目录里跑
+const DSH_HOME = process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
+const sessionsRoot = path.join(DSH_HOME, 'sessions')
 const tmp = path.join(os.tmpdir(), 'verify-incr-' + Date.now())
 const plainDir = path.join(tmp, 'plain')
 fs.mkdirSync(plainDir, { recursive: true })

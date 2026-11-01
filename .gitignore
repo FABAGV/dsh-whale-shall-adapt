@@ -47,3 +47,10 @@ _probe/
 # ZCode 本地状态（只有 .zcode/agents/ 入库）
 .zcode/*
 !.zcode/agents/
+
+# 编辑器 / 手工排障留下的备份，绝不入库也不进发布包
+*.orig
+*.orig-*
+
+# DSH 自主热更的暂存区：只在这里等合并，绝不入库、不进发布包
+.hotupdate/
