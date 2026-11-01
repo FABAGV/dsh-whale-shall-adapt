@@ -167,6 +167,11 @@ memory.export(query) / memory.revision(scope) / memory.onChange(listener) / memo
 - **书架 `area`**：记忆放在哪个书架，和 `scope`（谁能看）正交。模型可以在写入时选（`observe({ area })`），
   没给就按 scope 推默认：`owner*` → 同名、`chat:*` → 它自己、`member:<群号>:<QQ>` → `group:<群号>`。
   跨群的学问用自定义书架（如 `domain:DNS`、`skill`），全部放在 `shared` 范围里 —— 用户 2026-11-01 定的默认：所有人可见。
+- **书架的注入方式**（`$DSH_HOME/shall/memory/area-modes.json`，控制台「书架」页；`lib/memory/area-modes.js`）：
+  - `full`（默认）：条目正文照常进常驻注入；
+  - `index`：这一摞只进一行「书架「X」N 条（需要时用 `shall_memory_recall` 查）」，正文不进；
+  - `off`：这一摞不进注入，但仍留在库里、仍能被召回。
+  只统计 active / candidate 的条目；`full` 是默认值、不写进文件。改完会让涉及范围的版本 +1，下一次注入按新档位算。
 - **`shared` 范围**：任何会话（DSH、主人私聊、群聊）都能读；只有主人侧（DSH 会话 / 控制台）写的直接生效。QQ 来源可以写，但 `observe()` 一律降成**候选**，等主人在控制台转正（2026-11-01 改：以前是直接生效，群成员说一句"这是通用知识：…"就能跨群泄露 + 持久注入）。
 - **召回**：sqlite 模式下 `memory.recall()` 先走 FTS5（中文按 trigram 子串命中），再用字符相似度补分排序；
   全文没命中、或查询不到 3 个字时回落 LIKE / 全表相似度 —— 关掉索引时行为与旧版一致。

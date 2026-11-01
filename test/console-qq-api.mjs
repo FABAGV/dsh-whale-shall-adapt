@@ -182,6 +182,30 @@ console.log('E. 统一记忆页')
   check('清空并屏蔽', p.json.removed >= 1 && memory.list({ scope: 'chat:private:42' }).length === 0)
 }
 
+console.log('E2. 书架页：列出与切换注入方式')
+{
+  memory.observe({ scope: 'shared', area: 'domain:DNS', kind: 'fact', text: '内网 DNS 是 10.0.0.2', actor: 'console', origin: 'user' })
+  memory.observe({ scope: 'shared', area: 'domain:DNS', kind: 'note', text: '改 NS 要等一天', actor: 'console', origin: 'user' })
+  let r = await call(bare, 'GET', '/memory/areas')
+  const dns = r.json.areas.find((a) => a.area === 'domain:DNS')
+  check('书架页拿到条数、范围与默认模式', r.status === 200 && dns?.total === 2 && dns.mode === 'full' && dns.scopes.includes('shared'), JSON.stringify(dns))
+  r = await call(bare, 'PUT', '/memory/areas', { area: 'domain:DNS', mode: 'index' })
+  check('切换成只注入列表', r.json.ok === true && r.json.mode === 'index' && memory.areaMode('domain:DNS') === 'index')
+  check('返回的书架列表带着新模式', r.json.areas.find((a) => a.area === 'domain:DNS')?.mode === 'index')
+  r = await call(bare, 'PUT', '/memory/areas', { area: 'domain:DNS', mode: 'half' })
+  check('非法模式：400', r.status === 400)
+  check('缺书架名：400', (await call(bare, 'PUT', '/memory/areas', { mode: 'index' })).status === 400)
+  r = await call(bare, 'PUT', '/memory/areas', { area: 'domain:DNS', mode: 'off' })
+  check('再切成不注入', r.json.ok === true && memory.areaMode('domain:DNS') === 'off')
+  r = await call(bare, 'GET', '/memory/scopes')
+  check('记忆页的范围接口也带上模式', r.json.areas.find((a) => a.area === 'domain:DNS')?.mode === 'off')
+  await call(bare, 'PUT', '/memory/areas', { area: 'domain:DNS', mode: 'full' })
+  const saved = fs.existsSync(path.join(memory.dir, 'area-modes.json'))
+    ? JSON.parse(fs.readFileSync(path.join(memory.dir, 'area-modes.json'), 'utf8'))
+    : { modes: {} }
+  check('改回 full：生效且文件里不保留这一项（默认值不落盘）', memory.areaMode('domain:DNS') === 'full' && !('domain:DNS' in saved.modes))
+}
+
 console.log('F. 信号')
 {
   signals.emit({ kind: 'correction', scope: 'chat:private:42', quote: '不对' })

@@ -45,6 +45,7 @@
 - **「说话习惯」随人格注入**：`describeHabit()` 从本地实算的统计里挑出能照着做的几条（消息长度、标点比例、表情、连发、口头常用及其出现比例），随版本存下来，注入文本里多一段"他的说话习惯（按真实发言统计）"。确定性、不花模型钱，注入字节稳定（不影响系统提示缓存）。
 - **`tools/import-chat.mjs` + `lib/adapt/chat-record-import.js`：把 QQ 导出的聊天记录转成人格素材**。支持 JSON / JSONL / 几种常见 txt 排版（`时间 昵称(QQ)` 表头、`[时间] 昵称: 正文`、只有 `昵称：正文` 时按文件时间倒推、无表头续行），写到 `$DSH_HOME/shall/qq/imported/<group|private>-<号>/`，与 QQ Chat Exporter 导入同一目录、同一去重判据。认出是 QQNT 备份（zip 里是 SQLCipher 加密的 SQLite）或 HTML/MHT 导出时明确拒绝并说清怎么导。
 ### 新增
+- **控制台「书架」页：每个书架单独选注入方式**。以前所有书架一视同仁，全倒进常驻注入；现在每摞可以选「完全注入（默认）／只注入书架列表／不注入」。选「只注入列表」时模型只看到一行「书架「X」N 条（需要时用 `shall_memory_recall` 查）」，正文不进上下文 —— 一摞越堆越厚时不必逐条删，切成目录就够；选「不注入」的仍留在库里、仍能被召回。设置存在 `$DSH_HOME/shall/memory/area-modes.json`，坏文件会被留档、按全默认处理；改完立即生效（下一次注入按新档位算，缓存键跟着变）。新增 `lib/memory/area-modes.js`、`lib/ui/console/page-shelves.js`、`GET/PUT /api/memory/areas`，以及 `test/memory-area-modes.mjs`（28 项）。
 - **`shall_qq_handoff`：主人可以点名换一台会话**（来自 DSH 的自主热更，已审合并）。自动交班只在上下文用到阈值时发生；现在主人可以在自己的 QQ 私聊里说一句就换。工具只**登记意图**，真正的交班仍然走 `turn/end` —— 回合进行中归档会话会让这一轮的回复无处可投。跳过的是三道自动判据（阈值、这一代的最小增长、会话忙不忙），不跳过冻结闸门（同一会话正在交班时直接拒绝）。只对**主人自己的私聊**开放（用 owner 判身份，不靠提示词），群里的任何人都触发不了。新增 `test/qq-handoff-force.mjs`（12 项）。
 - `test/fs-atomic.mjs`、`test/reliability.mjs`、`test/memory-seeds.mjs`、`test/no-outbound.mjs`（递归扫整个 `lib/` 看有没有新的出站请求）、`test/index-similarity.mjs`、`test/persona-prompt.mjs`、`test/chat-record-import.mjs`、`test/onebot-auth.mjs`、`test/label-forgery.mjs`。
 
