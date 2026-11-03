@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
     dsh-whale-shall-adapt 一键安装器（Windows / PowerShell）
 
@@ -25,7 +25,7 @@
         .\install.ps1 -Profile web         # 指定 profile
         .\install.ps1 -Mirror ghproxy      # 国内直连慢时走加速镜像
         .\install.ps1 -Tag main            # 装 main 分支最新代码（内容会变、无法校验，仅排障用）
-        .\install.ps1 -File .\dsh-whale-shall-adapt-0.3.1.tgz -Sha256 <64 位 hash>
+        .\install.ps1 -File .\dsh-whale-shall-adapt-0.3.2.tgz -Sha256 <64 位 hash>
         .\install.ps1 -Uninstall           # 卸载（保留用户数据 ~/.dsh/shall）
         .\install.ps1 -WhatIf              # 只打印会做什么
 #>
@@ -35,7 +35,7 @@ param(
     [string]$Profile,
 
     # GitHub release tag（默认桶里那个）；`main` = 直接用分支归档，不依赖 release（内容会变）
-    [string]$Tag = 'v0.3.1',
+    [string]$Tag = 'v0.3.2',
 
     # 下载通道：默认直连；-Mirror ghproxy|ghfast|ghproxynet 走加速镜像；auto = 直连失败再依次试镜像
     [ValidateSet('direct', 'auto', 'ghproxy', 'ghfast', 'ghproxynet')]
