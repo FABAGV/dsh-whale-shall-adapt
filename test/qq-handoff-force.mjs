@@ -4,11 +4,12 @@
  * 覆盖三件事：
  *   - 没绑常驻会话的聊天不能登记（否则 turn/end 拿不到 sessionId）；
  *   - 正常会话登记成功，`isForced` 立即为真；
- *   - 正在交班（frozen）的会话拒绝登记，不让两次交班撞在一起。
+ *   - 正在交班（frozen）的会话拒绝登记，不让两次交班撞在一起；
+ *   - 登记会过期（点名别的会话时目标可能一直不说话）。
  *
  * 运行：node test/qq-handoff-force.mjs
  */
-import { ConversationHandoff } from '../lib/conversation/handoff.js'
+import { ConversationHandoff, FORCED_TTL_MS } from '../lib/conversation/handoff.js'
 
 let pass = 0
 let fail = 0
@@ -79,6 +80,16 @@ console.log('D. 参数不全')
   const h = makeMonitor()
   check('缺 chatId 拒绝', h.forceHandoff('private', '')?.ok === false)
   check('缺 chatType 拒绝', h.forceHandoff('', '3511618235')?.ok === false)
+}
+
+console.log('E. 登记会过期')
+{
+  const h = makeMonitor()
+  h.forceHandoff('private', '3511618235')
+  check('刚登记有效', h.isForced('private', '3511618235') === true)
+  h.forced.set('private:3511618235', Date.now() - FORCED_TTL_MS - 1)
+  check('过期后不再算数', h.isForced('private', '3511618235') === false)
+  check('过期项被清掉', h.forced.has('private:3511618235') === false)
 }
 
 console.log(`\n结果：${pass} 通过 / ${fail} 失败`)

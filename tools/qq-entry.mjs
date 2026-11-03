@@ -1223,7 +1223,9 @@ mod.default.apply(root, {
   connection: { mount: 'own', host: '127.0.0.1', reversePort: PORT, token: '', allowNoToken: true },
   tasks: { workspaceRoot: WORKSPACE_ROOT },
   scope: { groups: ['*'], friends: ['*'], blockedGroups: ['99999'] },
-  advanced: { stateDir: STATE_DIR },
+  // 出站节流：真实默认是 1200/400/300（防 QQ 风控）。测试台用很小的值，
+  // 既让发送仍然经过串行队列（覆盖接线），又不给整轮测试加上几十秒的等待。
+  advanced: { stateDir: STATE_DIR, sendGapMs: 60, sendJitterMs: 20, sendGlobalGapMs: 10 },
 }, { qqStatus, groupSettings })
 
 await sleep(1000)

@@ -8,7 +8,7 @@
 //   node tools/run-tests.mjs --only privacy  只跑文件名含 privacy 的 test/*.mjs（不跑 QQ 集成测试）
 //   node tools/run-tests.mjs --no-qq         不跑 QQ 集成测试
 //   node tools/run-tests.mjs --qq-port 6810  QQ 集成测试的端口（默认 6810）
-//   node tools/run-tests.mjs --timeout 120   单个测试文件的超时秒数（默认 120）
+//   node tools/run-tests.mjs --timeout 120   单个测试文件的超时秒数（默认 120；QQ 集成至少 300）
 //
 // 退出码：0 全过；1 有失败；2 缺少宿主 peer 依赖（@deepseek-ai/cordis / schemastery），
 // 这时不跑任何文件 —— 否则会看到十几个 ERR_MODULE_NOT_FOUND，和真正的失败混在一起。
@@ -76,7 +76,7 @@ function isolatedEnv() {
  * 最后那行"结果：N 通过 / M 失败"会丢失，测试被误判成"没有结果行"。
  * ⚠️ 必须有超时：漏关一个句柄（曾经的 process.exit on Windows）就会一直挂着。
  */
-function run(cmd, args, env) {
+function run(cmd, args, env, limitMs = timeoutMs) {
   return new Promise((resolve) => {
     const child = spawn(cmd, args, { cwd: ROOT, env, windowsHide: true })
     let out = ''
@@ -88,7 +88,7 @@ function run(cmd, args, env) {
       } catch {
         /* 已经退出 */
       }
-    }, timeoutMs)
+    }, limitMs)
     child.stdout.on('data', (d) => (out += d))
     child.stderr.on('data', (d) => (out += d))
     child.on('close', (code) => {
@@ -137,15 +137,19 @@ console.log(`\ntest/*.mjs：${files.length} 个文件，${pass} 通过 / ${fail}
 
 let qqBad = false
 if (!noQq) {
+  // 集成测试一轮要起真实进程、跑假 NapCat、等超时重试，比单文件测试慢得多（Windows 上实测 150s+）。
+  // 不能沿用单文件的 --timeout，否则会在全部通过前被 SIGKILL。
+  const qqLimitMs = Math.max(timeoutMs, 300_000)
   const { env, home } = isolatedEnv()
-  const { code, out } = await run(
+  const { code, out, timedOut } = await run(
     process.execPath,
     ['tools/run-fast.mjs', '--base-port', qqPort, '--rounds', '1', '--tag', 'all'],
     env,
+    qqLimitMs,
   )
   cleanupHome(home)
   const tail = out.split(/\r?\n/).filter((l) => /汇总|失败|全部通过|^\s+- /.test(l))
-  console.log(`\nQQ 入口集成测试（tools/qq-entry.mjs）exit=${code}`)
+  console.log(`\nQQ 入口集成测试（tools/qq-entry.mjs）exit=${code}${timedOut ? `（超时 >${Math.round(qqLimitMs / 1000)}s）` : ''}`)
   console.log(tail.map((l) => `  ${l}`).join('\n'))
   qqBad = code !== 0
 }

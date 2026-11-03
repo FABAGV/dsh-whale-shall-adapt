@@ -119,6 +119,22 @@ console.log('D. 工具门控：仅聊天')
   check('没有会话头的调用被拒（不再默认放行）', typeof policy.guard({ name: 'bash', arguments: {} }) === 'string')
 }
 
+console.log('D2. 交班控制台与"不传 chat_id"')
+{
+  const owned = new PrivacyPolicy({ dir: path.join(tmp, 'state-handoff'), owner: { isOwner: (id) => String(id) === '42' } })
+  const ownerPrivate = { id: 'op', cwd: ws('qq-private-42') }
+  const friendPrivate = { id: 'fp', cwd: ws('qq-private-77') }
+  const call = (header, args, name = 'shall_qq_handoff') => owned.guard({ agent: { session: { header } }, name, arguments: args })
+  check('主人私聊点名群：放行', call(ownerPrivate, { chat_type: 'group', chat_id: '123456' }) === undefined)
+  check('主人私聊不传参数：放行（按本会话）', call(ownerPrivate, {}) === undefined)
+  check('别人的私聊点名群：仍被拒', typeof call(friendPrivate, { chat_type: 'group', chat_id: '123456' }) === 'string')
+  check('别人的私聊不传参数：放行（按本会话）', call(friendPrivate, {}) === undefined)
+  check('群会话点名别的群：仍被拒', typeof call(GROUP, { chat_type: 'group', chat_id: '999' }) === 'string')
+  check('群会话不传参数：放行（按本群）', call(GROUP, {}) === undefined)
+  check('只放开交班，不放开发消息', typeof call(ownerPrivate, { chat_type: 'group', chat_id: '123456', text: 'x' }, 'shall_qq_send') === 'string')
+  check('记忆工具不传 chat_id 也按本会话放行', call(GROUP, {}, 'shall_qq_memory') === undefined)
+}
+
 console.log('E. 工具门控：受限（路径与网址）')
 {
   const result = policy.update({ classes: { 'qq-group': { tier: 'safe' } } }, 'console')

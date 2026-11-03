@@ -60,7 +60,7 @@ qq:
                   handoffMaxTokens, fragmentMergeJaccard, fragmentAskJaccard, agingEveryGens, maxFragmentsPerChat, idleMinutes: 20, idleMinTurns: 3 }
   ingest:       { forwardRecords, groupArchive }
   corpus:       { retainDays: 30 }
-  advanced:     { dedupeWindowMs, dedupeMaxEntries, relayFlushMs, stateDir }
+  advanced:     { dedupeWindowMs, dedupeMaxEntries, relayFlushMs, sendGapMs: 1200, sendJitterMs: 400, sendGlobalGapMs: 300, stateDir }
 # ── 群聊回复决策（第 8 节）
 group:
   defaultMode: active               # silent | mention | present | active | watch（默认 active，见 lib/group/config.js）
@@ -301,9 +301,11 @@ qq.pairing.issueCode() / qq.pairing.owner() / qq.pairing.reset()
 体检（`lib/ui/qq-health.js`）：控制台的 QQ 页显示结论、每条问题的下一步、存活判据、关键状态、交班进度、配置摘要和主人配对；只在登录后可见。
 OneBot 端口上不用登录的只有 `/shall/qq/health`，返回 `{ ok, alive, connections, version, detail }`，不带 chatId、群名、bot 账号、路径和配置。
 
-QQ 工具在 `execute(args, exec)` 里用 `exec.agent.session.header` 判调用方：QQ 会话只能作用于自己所在的聊天，你自己的会话可作用于 scope 内任何聊天，拿不到 header 一律拒绝。
+QQ 工具在 `execute(args, exec)` 里用 `exec.agent.session.header` 判调用方：QQ 会话只能作用于自己所在的聊天（唯一例外是主人私聊的 `shall_qq_handoff`，见下），你自己的会话可作用于 scope 内任何聊天，拿不到 header 一律拒绝。
+不传 `chat_id` 表示"调用方自己所在的聊天"（`shall_qq_memory` / `shall_qq_handoff` 都支持）：工具自己的 `targetChat()` 和两道门控（`lib/qq/tools.js` 的写操作守卫、`lib/privacy/policy.js` 的等级守卫）都按这个口径解析，不能当成缺参数拒掉。
 这一层与 privacy 的工具等级叠加，不互相替代。工具：`shall_qq_send`、`shall_qq_history`、`shall_qq_summary`（按需群总结：取某群最近一段时间的聊天，由模型自己写总结）、
 `shall_qq_chats`、`shall_qq_alive`、`shall_qq_memory`、`shall_memory_recall`（按关键词翻记忆，只翻调用方看得到的范围：QQ 会话 = 本聊天 + 本群群友，你自己的会话 = `owner` + `owner:work`）、`shall_meme_lookup`。
+`shall_qq_handoff`（交班）：主人的私聊、主人自己的 DSH 会话是控制台，可以点名 `qq.scope` / 控制台群接入范围内的任何会话换一台；群会话、别人的私聊只能作用于自己所在的聊天，而且目标必须是主人的私聊。工具只登记意图，真正的交班在**目标会话**下一次 `turn/end` 执行；登记 30 分钟没被消费就作废（目标可能一直不说话）。
 
 点名（`lib/qq/pipeline.js`）：下面几种都算叫 bot（是否只认点名由群的档位决定，默认档位是 `active`，没被叫也可能接话），结果写在 `decision.addressedBy`：
 `at`（@ bot；@全体成员不算）、`reply`（回复 bot 发过的消息：先查最近 500 条 bot 发出的 message_id，查不到时取回引用原文看发送者）、
@@ -469,6 +471,7 @@ engine.settingsFor(groupId) / engine.snapshot(chatKey?) / engine.ignoreSender(gr
 | `【备忘】【目的】…【状态】完成 / 待续 / 跳过【待续】…` | 不发到 QQ。待续（≤3 条，每条 ≤80 字）存成 `intent`（文本带“待续：”前缀，模型来源，置信度 0.5，3 天后过期），下次注入时模型能看到；完成 → 划掉目的相近的待续（`memory.complete`）；跳过 → 当作这轮没开口 |
 
 群里默认引用触发它的那条消息回复（只加在这一回合的第一条）；**不自动 @ 人**，要 @ 谁由模型自己写 `<at/>`；一条消息超过 `group.reply.maxChars` 就在段落/句末分条，条间按打字速度留间隔。
+所有出站消息（分条、`shall_qq_send`、发图、通知、系统提示）都经过 `lib/qq/send-throttle.js` 统一节流：同一个聊天串行，两条之间至少隔 `advanced.sendGapMs`（默认 1200ms），每条发送前再随机等 0–`sendJitterMs`（默认 400ms），不同聊天之间至少隔 `sendGlobalGapMs`（默认 300ms）。间隔按"开始发送"算；`sendGapMs: 0` 时只保留串行。
 连续 `silentReminderAfter`（默认 6）次没开口，下一次提示里追加一句提醒。格式说明写在前台约定里（`REPLY_FORMAT_HELP`），备忘靠模型照着写，没写也没有副作用。
 
 ## 13. 群成员记忆、群概况冷启动、目标归属、交班回看
